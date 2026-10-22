@@ -1,0 +1,24 @@
+flowchart TD
+    A[SPV creates product] --> B[Operator creates RCV with expected SKU quantities]
+    B --> C[Operator submits TRX actual physical quantities]
+    C --> D{RCV incomplete and no active TRX?}
+    D -- No --> E[Return validation or conflict error]
+    D -- Yes --> F{Every actual quantity within remaining approved-based cap?}
+    F -- No --> G[Persist REJECTED_BY_SYSTEM / UNRESOLVED]
+    G --> H[HTTP 201 persisted attempt; SPV investigates]
+    H --> I{Input error?}
+    I -- Yes --> J[Correct same TRX/RCV IDs; actor/time/reason and before-after audit]
+    J --> F
+    I -- No --> K[Record verified physical discrepancy and resolve review]
+    K --> C
+    F -- Yes --> L[Persist PENDING_APPROVAL]
+    L --> M[SPV approves]
+    M --> N[Single PostgreSQL transaction: revalidate, ledger, balance, approval, audit, outbox]
+    N --> O{All SKU expected quantities approved?}
+    O -- Yes --> P[RCV COMPLETED]
+    O -- No --> Q[RCV INCOMPLETE: next TRX permitted]
+    Q --> C
+    N --> R[Outbox publisher]
+    R --> S[RabbitMQ]
+    S --> T[Consumer persists notification once per source_event_id and recipient_id]
+    T --> U[React polls notifications via REST]

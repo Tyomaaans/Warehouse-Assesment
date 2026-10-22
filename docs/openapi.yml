@@ -1,0 +1,1730 @@
+openapi: 3.0.3
+info:
+  title: Warehouse Receiving API
+  version: 1.1.0
+  description: 'Locked warehouse receiving contract, approved in Agent Task 1B.
+
+    All REST IDs are canonical, unpadded Base64URL encodings of 16 UUID v4 bytes.
+
+    Responses use the clone-mini-erp success/error envelope and management pagination.
+
+    All requests are strictly bound; unknown JSON fields, null/non-object roots, invalid UTF-8,
+
+    trailing JSON values and bodies above 1 MiB are rejected. Validation and business rules
+
+    are enforced server-side. Over-limit receiving attempts are persisted with HTTP 201;
+
+    only Supervisor approval posts inventory. No WebSocket or chat endpoints exist.'
+servers:
+- url: /api/v1
+security:
+- bearerAuth: []
+tags:
+- name: Auth
+- name: Products
+- name: Receiving
+- name: Transactions
+- name: Inventory
+- name: Audit
+- name: Notifications
+paths:
+  /auth/login:
+    post:
+      tags:
+      - Auth
+      security: []
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Access token and refresh session; actual envelope from reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+          headers:
+            Set-Cookie:
+              description: 'Two separate Set-Cookie headers, not a comma-joined value: refresh_token=<opaque>;
+                Path=/api/v1/auth; HttpOnly; SameSite=Strict, and session_id=<Base64URL UUID>; Path=/api/v1;
+                HttpOnly; SameSite=Strict. Both are host-only. Secure in production (HTTPS). Max-Age matches
+                session TTL: SHORT_REFRESH_EXPIRY=1h by default, DEFAULT_REFRESH_EXPIRY=168h when remember_me=true.
+                Rotation replaces both cookies, retaining the session ID.'
+              schema:
+                type: string
+              example: refresh_token=<opaque>; Path=/api/v1/auth; Max-Age=3600; HttpOnly; SameSite=Strict;
+                Secure
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+      operationId: postAuthLogin
+  /auth/refresh:
+    post:
+      tags:
+      - Auth
+      security:
+      - refreshCookie: []
+        sessionCookie: []
+      summary: Rotate refresh token using reference project's session transport
+      responses:
+        '200':
+          description: New token/session pair
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+          headers:
+            Set-Cookie:
+              description: 'Two separate Set-Cookie headers, not a comma-joined value: refresh_token=<opaque>;
+                Path=/api/v1/auth; HttpOnly; SameSite=Strict, and session_id=<Base64URL UUID>; Path=/api/v1;
+                HttpOnly; SameSite=Strict. Both are host-only. Secure in production (HTTPS). Max-Age matches
+                session TTL: SHORT_REFRESH_EXPIRY=1h by default, DEFAULT_REFRESH_EXPIRY=168h when remember_me=true.
+                Rotation replaces both cookies, retaining the session ID.'
+              schema:
+                type: string
+              example: refresh_token=<opaque>; Path=/api/v1/auth; Max-Age=3600; HttpOnly; SameSite=Strict;
+                Secure
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      operationId: postAuthRefresh
+      description: Require both cookies; rotate refresh token once, check live Redis session, and issue a 15-minute
+        access JWT. Refresh token never appears in JSON. Redis rotation lock contention returns 409. Missing,
+        expired, used or revoked refresh tokens return 401.
+  /auth/logout:
+    post:
+      tags:
+      - Auth
+      summary: Revoke current session
+      responses:
+        '204':
+          description: Session revoked
+          headers:
+            Set-Cookie:
+              description: 'Two separate clearing headers: refresh_token=; Path=/api/v1/auth; Max-Age=0; HttpOnly;
+                SameSite=Strict and session_id=; Path=/api/v1; Max-Age=0; HttpOnly; SameSite=Strict. Secure
+                in production; host-only.'
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      operationId: postAuthLogout
+      security:
+      - refreshCookie: []
+        sessionCookie: []
+        bearerAuth: []
+      description: Revoke the current Redis session and hashed refresh token, immediately invalidating its
+        access JWTs. Clear both cookies using the same Path/SameSite/Secure attributes and Max-Age=0. Success
+        is 204 with no response body.
+  /products:
+    get:
+      tags:
+      - Products
+      summary: List products (Operator, SPV)
+      parameters:
+      - $ref: '#/components/parameters/Search'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Products; pagination envelope adapted from reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      operationId: getProducts
+    post:
+      tags:
+      - Products
+      summary: Create product (SPV only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProduct'
+      responses:
+        '201':
+          description: Created product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+      operationId: postProducts
+  /receivings:
+    get:
+      tags:
+      - Receiving
+      summary: List RCV documents (Operator, SPV)
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - INCOMPLETE
+          - COMPLETED
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Receiving document list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceivingsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      operationId: getReceivings
+    post:
+      tags:
+      - Receiving
+      summary: Create RCV (Operator only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReceiving'
+      responses:
+        '201':
+          description: Created receiving document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceivingResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+      operationId: postReceivings
+  /receivings/{id}:
+    get:
+      tags:
+      - Receiving
+      summary: RCV detail with expected, approved and remaining per SKU
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: RCV detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceivingResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      operationId: getReceivingsById
+  /receivings/{id}/transactions:
+    get:
+      tags:
+      - Transactions
+      summary: List TRXs for RCV
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: TRX list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      operationId: getReceivingsTransactionsById
+    post:
+      tags:
+      - Transactions
+      summary: Submit actual physical quantities (Operator only)
+      description: Valid quantities create PENDING_APPROVAL; over-limit quantities persist as REJECTED_BY_SYSTEM/UNRESOLVED.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransaction'
+      responses:
+        '201':
+          description: Transaction persisted, whether pending or system-rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+      operationId: postReceivingsTransactionsById
+  /transactions/{id}:
+    get:
+      tags:
+      - Transactions
+      summary: TRX detail
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: TRX detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      operationId: getTransactionsById
+  /transactions/{id}/approve:
+    post:
+      tags:
+      - Transactions
+      summary: Approve pending TRX (SPV only); inventory posts exactly once
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Approved TRX
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      operationId: postTransactionsApproveById
+      description: Supervisor only. Lock RCV then TRX, revalidate remaining approved-based caps, and commit
+        ledger, balances, approval metadata, RCV completion, audit and notification outbox atomically. Repeated/concurrent
+        approval returns 409 without posting inventory twice.
+  /transactions/{id}/correct:
+    patch:
+      tags:
+      - Transactions
+      summary: Correct unresolved rejected TRX in place (SPV only)
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectTransaction'
+      responses:
+        '200':
+          description: Revalidated TRX with unchanged ID and audit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+      operationId: patchTransactionsCorrectById
+  /transactions/{id}/review:
+    post:
+      tags:
+      - Transactions
+      summary: Resolve confirmed physical discrepancy (SPV only)
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewTransaction'
+      responses:
+        '200':
+          description: TRX remains rejected, review becomes RESOLVED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+      operationId: postTransactionsReviewById
+  /inventory:
+    get:
+      tags:
+      - Inventory
+      summary: Inbound inventory balances
+      parameters:
+      - $ref: '#/components/parameters/Search'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Inventory balances
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      operationId: getInventory
+  /inventory/transactions:
+    get:
+      tags:
+      - Inventory
+      summary: Immutable inbound inventory movement history
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - name: product_id
+        in: query
+        schema:
+          $ref: '#/components/schemas/Id'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Ledger rows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovementsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      operationId: getInventoryTransactions
+  /receiving-audit-logs:
+    get:
+      tags:
+      - Audit
+      summary: Receiving business audit (SPV only)
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - name: receiving_id
+        in: query
+        schema:
+          $ref: '#/components/schemas/Id'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Audit records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogsResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      operationId: getReceivingAuditLogs
+  /notifications:
+    get:
+      tags:
+      - Notifications
+      summary: Current user's notifications
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Recipient-owned notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      operationId: getNotifications
+  /notifications/{id}/read:
+    patch:
+      tags:
+      - Notifications
+      summary: Mark own notification as read
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Updated notification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      operationId: patchNotificationsReadById
+      description: Update using both notification ID and authenticated recipient ID in SQL. Return 404 outside
+        recipient scope; never accept a request-provided actor or recipient.
+  /health:
+    get:
+      security: []
+      summary: Process health endpoint
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+      operationId: getHealth
+  /ready:
+    get:
+      security: []
+      summary: Readiness endpoint for dependencies
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      operationId: getReady
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: refresh_token
+      description: HttpOnly refresh cookie; SHA-256 hash stored in Redis. Path=/api/v1/auth; SameSite=Strict;
+        Secure in production; host-only.
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session_id
+      description: HttpOnly canonical Base64URL session ID cookie. Path=/api/v1; SameSite=Strict; Secure in
+        production; host-only.
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+        maximum: 10000
+    Search:
+      name: search
+      in: query
+      schema:
+        type: string
+        maxLength: 100
+      description: Literal case-insensitive substring search over SKU and product name; no fuzzy expansion.
+    Limit:
+      name: limit
+      in: query
+      description: clone-mini-erp authenticated management default; maximum 100.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+  responses:
+    Unauthorized:
+      description: Invalid or missing authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Role or ownership denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Malformed request/ID, unknown or duplicate line, nonpositive/noninteger quantity, or other
+        invalid input. Useful public field/path message; code=invalid_input. Over-limit receiving attempts
+        are persisted with 201 instead.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Duplicate SKU/order reference, active TRX, terminal/invalid state, repeated approval, or
+        concurrent refresh rotation. No partial business writes. code=already_exists, conflict or concurrent_refresh.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Validly encoded ID does not identify an accessible resource. A notification outside the
+        caller recipient scope also returns 404.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PayloadTooLarge:
+      description: Request body exceeds 1 MiB
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unavailable:
+      description: Required dependency unavailable; no sensitive internal details
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Unexpected error; generic public message
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Id:
+      type: string
+      minLength: 22
+      maxLength: 22
+      pattern: ^[A-Za-z0-9_-]{21}[AQgw]$
+      example: VQ6EAOKbQdSnFkRmVUQAAA
+      description: Canonical unpadded Base64URL of 16 UUID v4 bytes. Decode, require RFC 4122 variant and version
+        4, then re-encode and require exact equality. Reject textual UUIDs, padding, whitespace and noncanonical
+        encodings. The pattern checks alphabet, length and unused pad bits; runtime validation checks UUID
+        version/variant.
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - error
+      properties:
+        success:
+          type: boolean
+          enum:
+          - false
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+      description: Exactly the clone-mini-erp nested envelope. Messages describe public request/state problems;
+        never expose SQL, constraint names, stack traces, credentials or token values.
+      example:
+        success: false
+        error:
+          code: invalid_input
+          message: items[0].actual_quantity must be a positive integer
+    Product:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - sku
+      - name
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        sku:
+          type: string
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CreateProduct:
+      type: object
+      additionalProperties: false
+      required:
+      - sku
+      - name
+      properties:
+        sku:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+    ExpectedItem:
+      type: object
+      additionalProperties: false
+      required:
+      - product_id
+      - expected_quantity
+      properties:
+        product_id:
+          $ref: '#/components/schemas/Id'
+        expected_quantity:
+          type: integer
+          format: int64
+          minimum: 1
+    CreateReceiving:
+      type: object
+      additionalProperties: false
+      required:
+      - order_reference
+      - items
+      properties:
+        order_reference:
+          type: string
+          minLength: 1
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpectedItem'
+          minItems: 1
+      description: No duplicate product IDs; order_reference is unique. Referenced products must exist. Quantities
+        are positive int64 integers.
+    ReceivingSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - order_reference
+      - status
+      - created_by
+      - created_at
+      - updated_at
+      - completed_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        order_reference:
+          type: string
+        status:
+          type: string
+          enum:
+          - INCOMPLETE
+          - COMPLETED
+        created_by:
+          $ref: '#/components/schemas/Id'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+    ReceivingItem:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - product_id
+      - sku
+      - name
+      - expected_quantity
+      - approved_quantity
+      - remaining_quantity
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        product_id:
+          $ref: '#/components/schemas/Id'
+        sku:
+          type: string
+        name:
+          type: string
+        expected_quantity:
+          type: integer
+          format: int64
+          minimum: 1
+        approved_quantity:
+          type: integer
+          format: int64
+          minimum: 0
+        remaining_quantity:
+          type: integer
+          format: int64
+          minimum: 0
+      description: Approved quantity sums APPROVED TRX items only. Remaining = expected minus approved.
+    ReceivingDetail:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - order_reference
+      - status
+      - created_by
+      - created_at
+      - updated_at
+      - completed_at
+      - items
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        order_reference:
+          type: string
+        status:
+          type: string
+          enum:
+          - INCOMPLETE
+          - COMPLETED
+        created_by:
+          $ref: '#/components/schemas/Id'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceivingItem'
+      description: Transaction history is available at /receivings/{id}/transactions.
+    ActualItem:
+      type: object
+      additionalProperties: false
+      required:
+      - receiving_document_item_id
+      - actual_quantity
+      properties:
+        receiving_document_item_id:
+          $ref: '#/components/schemas/Id'
+        actual_quantity:
+          type: integer
+          format: int64
+          minimum: 1
+    CreateTransaction:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActualItem'
+          minItems: 1
+      description: No duplicate lines; every line belongs to the path RCV. Omitted SKUs mean no receipt; zero
+        quantities are invalid. Over-limit quantities are retained as a rejected TRX, not returned as a request
+        validation error.
+    Transaction:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - receiving_document_id
+      - status
+      - review_status
+      - rejection_reason
+      - review_note
+      - created_by
+      - created_at
+      - updated_at
+      - approved_by
+      - approved_at
+      - corrected_by
+      - corrected_at
+      - reviewed_by
+      - reviewed_at
+      - items
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        receiving_document_id:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          enum:
+          - PENDING_APPROVAL
+          - APPROVED
+          - REJECTED_BY_SYSTEM
+        review_status:
+          type: string
+          nullable: true
+          enum:
+          - UNRESOLVED
+          - RESOLVED
+          - null
+        rejection_reason:
+          type: string
+          nullable: true
+        review_note:
+          type: string
+          nullable: true
+        created_by:
+          $ref: '#/components/schemas/Id'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        approved_by:
+          $ref: '#/components/schemas/NullableId'
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
+        corrected_by:
+          $ref: '#/components/schemas/NullableId'
+        corrected_at:
+          type: string
+          format: date-time
+          nullable: true
+        reviewed_by:
+          $ref: '#/components/schemas/NullableId'
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionItem'
+      description: Actor/time pairs are nullable until the operation occurs. corrected_by/at identify the latest
+        correction; all correction reasons and snapshots are in immutable audit history. reviewed_by/at identify
+        review resolution. Non-rejected TRXs have null review_status. Approved and rejected/resolved TRXs are
+        terminal.
+    InventoryBalance:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - product_id
+      - sku
+      - name
+      - quantity
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        product_id:
+          $ref: '#/components/schemas/Id'
+        sku:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: integer
+          format: int64
+          minimum: 0
+        updated_at:
+          type: string
+          format: date-time
+    InventoryMovement:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - product_id
+      - receiving_transaction_item_id
+      - receiving_transaction_id
+      - receiving_document_id
+      - quantity_delta
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        product_id:
+          $ref: '#/components/schemas/Id'
+        receiving_transaction_item_id:
+          $ref: '#/components/schemas/Id'
+        receiving_transaction_id:
+          $ref: '#/components/schemas/Id'
+        receiving_document_id:
+          $ref: '#/components/schemas/Id'
+        quantity_delta:
+          type: integer
+          format: int64
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+      description: Append-only approved inbound movement. Source TRX and RCV IDs are derived by joining the
+        immutable source item; one movement per source item.
+    AuditRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - receiving_document_id
+      - receiving_transaction_id
+      - actor_id
+      - event_type
+      - reason
+      - before_data
+      - after_data
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        receiving_document_id:
+          $ref: '#/components/schemas/Id'
+        receiving_transaction_id:
+          $ref: '#/components/schemas/NullableId'
+        actor_id:
+          $ref: '#/components/schemas/NullableId'
+        event_type:
+          type: string
+          enum:
+          - RECEIVING_CREATED
+          - TRANSACTION_SUBMITTED
+          - TRANSACTION_REJECTED
+          - TRANSACTION_CORRECTED
+          - REVIEW_RESOLVED
+          - TRANSACTION_APPROVED
+          - RECEIVING_COMPLETED
+        reason:
+          type: string
+          nullable: true
+        before_data:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Structured public business snapshot; ID values use canonical Base64URL.
+        after_data:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Structured public business snapshot; ID values use canonical Base64URL.
+        created_at:
+          type: string
+          format: date-time
+      description: Append-only audit. Actor always comes from verified identity; null is reserved for automated
+        events. created_at is the event timestamp.
+    Notification:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - recipient_id
+      - source_event_id
+      - event_type
+      - message
+      - receiving_transaction_id
+      - read_at
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        recipient_id:
+          $ref: '#/components/schemas/Id'
+        source_event_id:
+          $ref: '#/components/schemas/Id'
+        event_type:
+          type: string
+        message:
+          type: string
+        receiving_transaction_id:
+          $ref: '#/components/schemas/NullableId'
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      description: Recipient-owned, persisted notification. Deduplicate by (source_event_id, recipient_id),
+        not source_event_id alone.
+    NullableId:
+      type: string
+      minLength: 22
+      maxLength: 22
+      pattern: ^[A-Za-z0-9_-]{21}[AQgw]$
+      example: VQ6EAOKbQdSnFkRmVUQAAA
+      description: Canonical unpadded Base64URL of 16 UUID v4 bytes. Decode, require RFC 4122 variant and version
+        4, then re-encode and require exact equality. Reject textual UUIDs, padding, whitespace and noncanonical
+        encodings. The pattern checks alphabet, length and unused pad bits; runtime validation checks UUID
+        version/variant.
+      nullable: true
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+          enum:
+          - invalid_input
+          - unauthorized
+          - invalid_credentials
+          - forbidden
+          - not_found
+          - already_exists
+          - conflict
+          - concurrent_refresh
+          - payload_too_large
+          - unavailable
+          - internal
+        message:
+          type: string
+          minLength: 1
+    PaginationMeta:
+      type: object
+      additionalProperties: false
+      required:
+      - current_page
+      - total_pages
+      - page_size
+      - total_data
+      properties:
+        current_page:
+          type: integer
+          minimum: 1
+        total_pages:
+          type: integer
+          format: int64
+          minimum: 0
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total_data:
+          type: integer
+          format: int64
+          minimum: 0
+      description: clone-mini-erp management convention. Empty lists have total_pages=0 and total_data=0; arrays
+        are [], never null. Out-of-range pages return an empty collection with the requested current_page.
+    User:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - email
+      - role
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum:
+          - OPERATOR
+          - SUPERVISOR
+    LoginData:
+      type: object
+      additionalProperties: false
+      required:
+      - user
+      - access_token
+      - expires_in
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        access_token:
+          type: string
+          description: JWT; expires after 900 seconds.
+        expires_in:
+          type: integer
+          enum:
+          - 900
+    RefreshData:
+      type: object
+      additionalProperties: false
+      required:
+      - access_token
+      - expires_in
+      properties:
+        access_token:
+          type: string
+          description: New JWT; expires after 900 seconds.
+        expires_in:
+          type: integer
+          enum:
+          - 900
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+          writeOnly: true
+        remember_me:
+          type: boolean
+          default: false
+    CorrectTransaction:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      - items
+      properties:
+        reason:
+          type: string
+          minLength: 1
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActualItem'
+          minItems: 1
+      description: Complete replacement of the submitted item list. Preserve TRX/RCV IDs and retained line
+        IDs. Reason must contain non-whitespace text. Only unresolved rejected TRXs may be corrected. Each
+        correction records an immutable before/after audit.
+    ReviewTransaction:
+      type: object
+      additionalProperties: false
+      required:
+      - note
+      properties:
+        note:
+          type: string
+          minLength: 1
+      description: Non-whitespace verification note for confirmed physical discrepancy. Resolves review without
+        approval or inventory posting.
+    TransactionItem:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - receiving_document_item_id
+      - actual_quantity
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        receiving_document_item_id:
+          $ref: '#/components/schemas/Id'
+        actual_quantity:
+          type: integer
+          format: int64
+          minimum: 1
+    HealthData:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+    ReadinessData:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - ready
+    LoginResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/LoginData'
+    RefreshResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/RefreshData'
+    ProductResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/Product'
+    ReceivingResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/ReceivingDetail'
+    TransactionResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/Transaction'
+    NotificationResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/Notification'
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/HealthData'
+    ReadinessResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/ReadinessData'
+    ProductsPage:
+      type: object
+      additionalProperties: false
+      required:
+      - products
+      - meta
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    ProductsResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/ProductsPage'
+    ReceivingsPage:
+      type: object
+      additionalProperties: false
+      required:
+      - receivings
+      - meta
+      properties:
+        receivings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceivingSummary'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    ReceivingsResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/ReceivingsPage'
+    TransactionsPage:
+      type: object
+      additionalProperties: false
+      required:
+      - transactions
+      - meta
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    TransactionsResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/TransactionsPage'
+    InventoryPage:
+      type: object
+      additionalProperties: false
+      required:
+      - balances
+      - meta
+      properties:
+        balances:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryBalance'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    InventoryResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/InventoryPage'
+    MovementsPage:
+      type: object
+      additionalProperties: false
+      required:
+      - movements
+      - meta
+      properties:
+        movements:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryMovement'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    MovementsResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/MovementsPage'
+    AuditLogsPage:
+      type: object
+      additionalProperties: false
+      required:
+      - audit_logs
+      - meta
+      properties:
+        audit_logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditRecord'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    AuditLogsResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/AuditLogsPage'
+    NotificationsPage:
+      type: object
+      additionalProperties: false
+      required:
+      - notifications
+      - meta
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    NotificationsResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+          minLength: 1
+        data:
+          $ref: '#/components/schemas/NotificationsPage'

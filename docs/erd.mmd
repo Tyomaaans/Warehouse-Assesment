@@ -1,0 +1,111 @@
+erDiagram
+  USERS ||--o{ RECEIVING_DOCUMENTS : creates
+  USERS ||--o{ RECEIVING_TRANSACTIONS : submits
+  USERS ||--o{ RECEIVING_TRANSACTIONS : approves_corrects_or_reviews
+  USERS ||--o{ RECEIVING_AUDIT_LOGS : performs
+  USERS ||--o{ NOTIFICATIONS : receives
+  PRODUCTS ||--o{ RECEIVING_DOCUMENT_ITEMS : expected_for
+  PRODUCTS ||--o| INVENTORY_BALANCES : balance
+  PRODUCTS ||--o{ INVENTORY_TRANSACTIONS : movement
+  RECEIVING_DOCUMENTS ||--|{ RECEIVING_DOCUMENT_ITEMS : contains
+  RECEIVING_DOCUMENTS ||--o{ RECEIVING_TRANSACTIONS : receives
+  RECEIVING_DOCUMENTS ||--o{ RECEIVING_AUDIT_LOGS : audits
+  RECEIVING_TRANSACTIONS ||--|{ RECEIVING_TRANSACTION_ITEMS : contains
+  RECEIVING_TRANSACTIONS ||--o{ RECEIVING_AUDIT_LOGS : audits
+  RECEIVING_TRANSACTIONS ||--o{ NOTIFICATIONS : concerns
+  RECEIVING_DOCUMENT_ITEMS ||--o{ RECEIVING_TRANSACTION_ITEMS : fulfills
+  RECEIVING_TRANSACTION_ITEMS ||--o| INVENTORY_TRANSACTIONS : posts
+  NOTIFICATION_OUTBOX ||--o{ NOTIFICATIONS : source_event_per_recipient
+  USERS {
+    uuid id PK
+    varchar email UK
+    text password_hash
+    varchar role
+    timestamptz created_at
+  }
+  PRODUCTS {
+    uuid id PK
+    varchar sku UK
+    varchar name
+    timestamptz created_at
+  }
+  RECEIVING_DOCUMENTS {
+    uuid id PK
+    varchar order_reference UK
+    varchar status
+    uuid created_by FK
+    timestamptz created_at
+    timestamptz updated_at
+    timestamptz completed_at "nullable"
+  }
+  RECEIVING_DOCUMENT_ITEMS {
+    uuid id PK
+    uuid receiving_document_id FK
+    uuid product_id FK
+    bigint expected_quantity
+  }
+  RECEIVING_TRANSACTIONS {
+    uuid id PK
+    uuid receiving_document_id FK
+    varchar status
+    varchar review_status
+    uuid created_by FK
+    uuid approved_by FK
+    uuid corrected_by FK
+    uuid reviewed_by FK
+    text rejection_reason "nullable"
+    text review_note "nullable"
+    timestamptz approved_at "nullable; paired with approved_by"
+    timestamptz corrected_at "nullable; latest correction"
+    timestamptz reviewed_at "nullable; resolution time"
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  RECEIVING_TRANSACTION_ITEMS {
+    uuid id PK
+    uuid receiving_transaction_id FK
+    uuid receiving_document_item_id FK
+    bigint actual_quantity
+  }
+  INVENTORY_BALANCES {
+    uuid id PK
+    uuid product_id FK
+    bigint quantity
+    timestamptz updated_at
+  }
+  INVENTORY_TRANSACTIONS {
+    uuid id PK
+    uuid product_id FK
+    uuid receiving_transaction_item_id FK, UK
+    bigint quantity_delta
+    timestamptz created_at
+  }
+  RECEIVING_AUDIT_LOGS {
+    uuid id PK
+    uuid receiving_document_id FK
+    uuid receiving_transaction_id FK
+    uuid actor_id FK
+    varchar event_type
+    jsonb before_data
+    jsonb after_data
+    text reason "nullable"
+    timestamptz created_at
+  }
+  NOTIFICATIONS {
+    uuid id PK
+    uuid recipient_id FK "UNIQUE(source_event_id, recipient_id)"
+    uuid receiving_transaction_id FK
+    uuid source_event_id FK "composite unique with recipient_id"
+    varchar event_type
+    text message
+    timestamptz read_at
+    timestamptz created_at
+  }
+  NOTIFICATION_OUTBOX {
+    uuid id PK
+    varchar event_type
+    uuid aggregate_id
+    jsonb payload
+    timestamptz published_at
+    timestamptz created_at
+  }
