@@ -75,6 +75,28 @@ for (const role of ['OPERATOR', 'SUPERVISOR'] as const) test(`${role} inventory,
   await page.goto('/notifications'); await expect(page).toHaveURL(/\/login$/);
 });
 
+test('mobile inventory confines accessible labels to the scrolling table', async ({ page, context }) => {
+  const auth = await login(page, 'OPERATOR');
+  try {
+    const response = await context.request.get('/api/v1/inventory?limit=1', { headers: { Authorization: `Bearer ${auth.access_token}` } });
+    expect(response.status()).toBe(200);
+    const balances = (decodeJSON(await response.text()) as { data: BalancesPage }).data;
+    expect(balances.balances.length).toBeGreaterThan(0);
+    const first = balances.balances[0]!;
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/inventory?search=${encodeURIComponent(first.sku)}`);
+    const scroll = page.getByRole('region', { name: 'Approved inbound balances', exact: true });
+    await expect(scroll).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await scroll.evaluate(element => { element.scrollLeft = element.scrollWidth; });
+    await expect(scroll.getByRole('link', { name: `View history for ${first.sku}`, exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  } finally {
+    const logout = await context.request.post('/api/v1/auth/logout', { headers: { Authorization: `Bearer ${auth.access_token}` } });
+    expect(logout.status()).toBe(204);
+  }
+});
+
 test('notification recipient isolation across account change', async ({ page, context }) => {
   const operator = await login(page, 'OPERATOR');
   const own = await notifications(context.request, operator.access_token);
