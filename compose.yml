@@ -1,0 +1,106 @@
+name: wh-assessment
+
+x-api-environment: &api-environment
+  APP_ENV: ${APP_ENV:-development}
+  APP_PORT: "8080"
+  DATABASE_URL: postgres://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-warehouse}?sslmode=disable
+  REDIS_URL: redis://redis:6379/0
+  RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}@rabbitmq:5672/
+  TRUSTED_PROXIES: ${NGINX_IP:-172.30.80.2}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-warehouse}
+      POSTGRES_DB: ${POSTGRES_DB:-warehouse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [warehouse]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [warehouse]
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-warehouse}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 12
+    networks: [warehouse]
+
+  migrate:
+    image: wh-assessment-backend:foundation
+    build: ./backend
+    command: ["migrate"]
+    environment: *api-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    networks: [warehouse]
+
+  api:
+    image: wh-assessment-backend:foundation
+    build: ./backend
+    environment: *api-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    stop_grace_period: 25s
+    networks: [warehouse]
+
+  nginx:
+    image: nginx:1.30.6-alpine
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      warehouse:
+        ipv4_address: ${NGINX_IP:-172.30.80.2}
+
+networks:
+  warehouse:
+    ipam:
+      config:
+        - subnet: ${WAREHOUSE_SUBNET:-172.30.80.0/24}
+          ip_range: ${WAREHOUSE_IP_RANGE:-172.30.80.128/25}
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
