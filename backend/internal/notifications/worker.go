@@ -16,6 +16,15 @@ import (
 const publishTimeout = 5 * time.Second
 const leaseDuration = 30 * time.Second
 
+// Separate production processes reuse the same tested delivery loops.
+func RunPublisher(ctx context.Context, repo domain.OutboxRepository, dsn string, logger zerolog.Logger) {
+	runPublisher(ctx, repo, dsn, logger)
+}
+
+func RunConsumer(ctx context.Context, repo domain.NotificationRepository, dsn string, logger zerolog.Logger) {
+	runConsumer(ctx, repo, dsn, logger)
+}
+
 // PublishPending claims only one event so no batch waits behind a broker call.
 func PublishPending(ctx context.Context, repo domain.OutboxRepository, publisher Publisher) (bool, error) {
 	query, cancel := context.WithTimeout(ctx, 3*time.Second)

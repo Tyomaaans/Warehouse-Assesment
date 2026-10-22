@@ -29,6 +29,7 @@ func RequestContext(logger zerolog.Logger) gin.HandlerFunc {
 				route = "unmatched"
 			}
 			logger.Info().Str("event", "request_completed").Str("request_id", id).
+				Str("peer_address", c.Request.RemoteAddr).Str("client_ip", c.ClientIP()).
 				Str("method", c.Request.Method).Str("route", route).
 				Int("status", c.Writer.Status()).Dur("duration_ms", time.Since(started)).Msg("request completed")
 		}()

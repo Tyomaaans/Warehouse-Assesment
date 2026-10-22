@@ -1,6 +1,6 @@
 // Keep the contract's int64 quantities exact, including values above Number.MAX_SAFE_INTEGER.
 // JSON source access/rawJSON are supported by the tested Node and Chrome toolchains.
-const quantityKeys = new Set(['expected_quantity', 'approved_quantity', 'remaining_quantity', 'actual_quantity']);
+const quantityKeys = new Set(['expected_quantity', 'approved_quantity', 'remaining_quantity', 'actual_quantity', 'quantity', 'quantity_delta']);
 type SourceJSON = typeof JSON & { rawJSON?: (value: string) => unknown };
 
 export function encodeJSON(value: unknown): string {

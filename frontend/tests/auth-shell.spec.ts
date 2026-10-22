@@ -74,7 +74,7 @@ test('Operator login, strict cookies, reload rotation, role guard and mobile nav
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('dialog').getByRole('link', { name: 'Notifications', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Notifications', exact: true })).toBeVisible();
-  await expect(page.getByText('Planned view', { exact: true })).toBeVisible();
+  await expect(page.getByText('Planned view', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('dialog')).toBeHidden();
   await expect(page.locator('#main-content')).toBeFocused();
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
@@ -84,16 +84,10 @@ test('Supervisor navigation, explicit placeholders, logout 204 and cookie cleari
   await login(page, 'SUPERVISOR');
   await page.getByRole('navigation', { name: 'Supervisor navigation' }).getByRole('link', { name: 'Supervisor review' }).click();
   await expect(page.getByRole('heading', { name: 'Supervisor review', exact: true })).toBeVisible();
-  for (const [path, title] of [['/products', 'Products'], ['/receivings', 'Receiving documents'], ['/transactions', 'Receiving transactions']]) {
+  for (const [path, title] of [['/products', 'Products'], ['/receivings', 'Receiving documents'], ['/transactions', 'Receiving transactions'], ['/inventory', 'Inventory'], ['/notifications', 'Notifications']]) {
     await page.goto(path!);
     await expect(page.getByRole('heading', { name: title!, exact: true })).toBeVisible();
     await expect(page.getByText('Planned view', { exact: true })).toHaveCount(0);
-  }
-  for (const [path, title] of [['/inventory', 'Inventory'], ['/notifications', 'Notifications']]) {
-    await page.goto(path!);
-    await expect(page.getByRole('heading', { name: title!, exact: true })).toBeVisible();
-    await expect(page.getByText('Planned view', { exact: true })).toBeVisible();
-    await expect(page.getByText(/no live records are displayed/)).toBeVisible();
   }
   const response = page.waitForResponse(response => response.url().endsWith('/api/v1/auth/logout'));
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();

@@ -1,0 +1,156 @@
+name: warehouse
+
+x-service: &service
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: 5m, max-file: "2"}
+  networks: [warehouse]
+
+x-runtime: &runtime
+  <<: *service
+  image: ${API_IMAGE:?Set release API_IMAGE}
+  build:
+    context: ./backend
+    args: {BINARY_SOURCE: "${BINARY_SOURCE:-prebuilt}"}
+  read_only: true
+  tmpfs: ["/tmp:size=8m,mode=1777"]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  stop_grace_period: 25s
+  mem_limit: 64m
+  pids_limit: 64
+  environment: &environment
+    APP_ENV: ${APP_ENV:-production}
+    APP_PORT: "8080"
+    DATABASE_URL: postgres://warehouse:${POSTGRES_PASSWORD:?Set private database password}@postgres:5432/warehouse?sslmode=disable
+    REDIS_URL: redis://:${REDIS_PASSWORD:?Set private Redis password}@redis:6379/0
+    RABBITMQ_URL: amqp://warehouse:${RABBITMQ_PASSWORD:?Set private broker password}@rabbitmq:5672/
+    JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set private JWT signing key}
+    TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+    GOMAXPROCS: "1"
+    GOMEMLIMIT: 40MiB
+
+x-worker: &worker
+  <<: *runtime
+  mem_limit: 48m
+  environment:
+    APP_ENV: ${APP_ENV:-production}
+    DATABASE_URL: postgres://warehouse:${POSTGRES_PASSWORD:?Set private database password}@postgres:5432/warehouse?sslmode=disable
+    RABBITMQ_URL: amqp://warehouse:${RABBITMQ_PASSWORD:?Set private broker password}@rabbitmq:5672/
+    GOMAXPROCS: "1"
+    GOMEMLIMIT: 28MiB
+  depends_on:
+    postgres: {condition: service_healthy}
+    rabbitmq: {condition: service_healthy}
+  healthcheck:
+    test: [CMD, warehouse, worker-healthcheck]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 20s
+
+services:
+  postgres:
+    <<: *service
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_USER: warehouse
+      POSTGRES_DB: warehouse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set private database password}
+    command: [postgres, -c, max_connections=40, -c, shared_buffers=16MB, -c, work_mem=1MB, -c, maintenance_work_mem=16MB, -c, max_parallel_workers_per_gather=0]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    mem_limit: 112m
+    pids_limit: 64
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U warehouse -d warehouse']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    <<: *service
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    environment: {REDIS_PASSWORD: "${REDIS_PASSWORD:?Set private Redis password}"}
+    command: [sh, -c, 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD" --maxmemory 16mb --maxmemory-policy noeviction --save ""']
+    volumes: [redis-data:/data]
+    mem_limit: 32m
+    pids_limit: 32
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  rabbitmq:
+    <<: *service
+    image: rabbitmq:4-alpine@sha256:5b70d54d53d0ce9558b84ad93cb237d06fa2e8c57115fa0ff7223b9eaffa44ed
+    hostname: warehouse-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: warehouse
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set private broker password}
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: '+S 1:1 +A 2 -rabbit vm_memory_high_watermark {absolute,134217728} disk_free_limit 536870912'
+    volumes: [rabbitmq-data:/var/lib/rabbitmq]
+    mem_limit: 192m
+    pids_limit: 128
+    healthcheck:
+      test: [CMD-SHELL, "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 12
+  migrate:
+    <<: *runtime
+    profiles: [ops]
+    restart: "no"
+    command: [migrate]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck: {disable: true}
+  api:
+    <<: *runtime
+    ports: ["127.0.0.1:${API_PORT:-18083}:8080"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, warehouse, healthcheck]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+  outbox-publisher:
+    <<: *worker
+    command: [outbox-publisher]
+  notification-consumer:
+    <<: *worker
+    command: [notification-consumer]
+  frontend:
+    <<: *service
+    image: ${FRONTEND_IMAGE:?Set release FRONTEND_IMAGE}
+    build:
+      context: ./frontend
+      args: {ASSET_SOURCE: "${ASSET_SOURCE:-prebuilt}"}
+    environment: {API_PROXY_TARGET: "http://api:8080"}
+    ports: ["127.0.0.1:${FRONTEND_PORT:-18082}:8080"]
+    read_only: true
+    tmpfs: ["/tmp:size=8m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 15s
+    mem_limit: 64m
+    pids_limit: 32
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8080/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 4s
+      retries: 5
+
+networks:
+  warehouse:
+    ipam:
+      config: [{subnet: "${WAREHOUSE_SUBNET:-172.30.83.0/24}"}]
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:

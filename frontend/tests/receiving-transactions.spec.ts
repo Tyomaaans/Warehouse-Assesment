@@ -93,13 +93,13 @@ async function document(actor: Actor, id: string) {
 }
 async function stock(actor: Actor, prefix: string, product: { id: string }, expected: number, movements: number) {
   const balancesResponse = await actor.context.request.get(`/api/v1/inventory?search=${prefix}&limit=100`, { headers: headers(actor) });
-  const balances = await capture<{ balances: { product_id: string; quantity: number }[] }>(balancesResponse);
+  const balances = await capture<{ balances: { product_id: string; quantity: bigint }[] }>(balancesResponse);
   if (expected === 0) expect(balances.balances.find(row => row.product_id === product.id)).toBeUndefined();
-  else expect(balances.balances.find(row => row.product_id === product.id)?.quantity).toBe(expected);
+  else expect(balances.balances.find(row => row.product_id === product.id)?.quantity).toBe(BigInt(expected));
   const historyResponse = await actor.context.request.get(`/api/v1/inventory/transactions?product_id=${product.id}&limit=100`, { headers: headers(actor) });
-  const history = await capture<{ movements: { quantity_delta: number; receiving_transaction_id: string; receiving_document_id: string }[] }>(historyResponse);
+  const history = await capture<{ movements: { quantity_delta: bigint; receiving_transaction_id: string; receiving_document_id: string }[] }>(historyResponse);
   expect(history.movements).toHaveLength(movements);
-  expect(history.movements.reduce((sum, row) => sum + row.quantity_delta, 0)).toBe(expected);
+  expect(history.movements.reduce((sum, row) => sum + row.quantity_delta, 0n)).toBe(BigInt(expected));
   return history.movements;
 }
 async function screenshot(page: Page, name: string) { if (process.env.E2E_SCREENSHOT_DIR) { await mkdir(process.env.E2E_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: `${process.env.E2E_SCREENSHOT_DIR}/${name}.png`, fullPage: true }); } }

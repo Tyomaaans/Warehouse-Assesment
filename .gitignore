@@ -11,3 +11,11 @@ frontend/test-results/
 *.tsbuildinfo
 *.log
 coverage.out
+
+!.env.production.example
+.work/
+release/
+backend/compiled/
+frontend/compiled/
+__pycache__/
+*.pyc

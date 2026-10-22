@@ -1,0 +1,183 @@
+name: Deploy Warehouse
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', 'README.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: production-warehouse
+  cancel-in-progress: false
+jobs:
+  build:
+    name: Build and verify Warehouse
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CGO_ENABLED: "0"
+      GOMAXPROCS: "2"
+      GOFLAGS: -p=2 -trimpath
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Use tested npm
+        run: |
+          npm install --prefix "$RUNNER_TEMP/warehouse-npm" --no-audit --no-fund npm@11.21.0
+          echo "$RUNNER_TEMP/warehouse-npm/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Frontend checks
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+          npm run lint
+          npm test
+          npm run build
+      - name: Go compilation and vet
+        working-directory: backend
+        run: |
+          test -z "$(gofmt -l .)"
+          go build -buildvcs=false ./...
+          go vet ./...
+      - name: OpenAPI and deployment checks
+        run: |
+          python3 -m pip install openapi-spec-validator==0.9.0
+          python3 -m openapi_spec_validator docs/openapi.yml
+          bash -n scripts/deploy.sh
+          python3 scripts/check-deployment.py
+          python3 scripts/test-deploy.py
+      - name: Production containers and real integration gate
+        env:
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: /usr/bin/google-chrome
+        run: python3 scripts/verify-production.py
+      - name: Prepare versioned source artifact
+        run: |
+          mkdir -p release .work/deploy
+          git archive HEAD backend frontend compose.production.yml scripts/deploy.sh | tar -x -C release
+          mkdir -p release/backend/compiled release/frontend/compiled
+          (cd backend && go build -buildvcs=false -trimpath -ldflags="-s -w" -o ../release/backend/compiled/api .)
+          cp -a frontend/dist/. release/frontend/compiled/
+          RELEASE="${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf 'API_IMAGE=warehouse-api:%s\nFRONTEND_IMAGE=warehouse-frontend:%s\n' "$RELEASE" "$RELEASE" > release/images.env
+          printf '%s\n' "$RELEASE" > release/release-id
+          tar -czf .work/deploy/warehouse-release.tar.gz -C release .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: warehouse-source
+          path: .work/deploy/warehouse-release.tar.gz
+          retention-days: 3
+          if-no-files-found: error
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: production
+      url: https://wh.tyomaaans.cloud
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: warehouse-source, path: artifact}
+      - name: Extract verified release
+        run: |
+          mkdir release
+          tar -xzf artifact/warehouse-release.tar.gz -C release
+      - name: Set up existing SSH secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          for key in DEPLOY_HOST DEPLOY_USER DEPLOY_PORT DEPLOY_KNOWN_HOSTS DEPLOY_SSH_KEY; do
+            test -n "${!key}" || { echo "::error::Required existing secret $key is unavailable to this job."; exit 1; }
+          done
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.:-]+$ && "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          (( 10#$DEPLOY_PORT >= 1 && 10#$DEPLOY_PORT <= 65535 ))
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          cat > "$HOME/.ssh/config" <<CONFIG
+          Host warehouse-target
+            HostName $DEPLOY_HOST
+            User $DEPLOY_USER
+            Port $DEPLOY_PORT
+            IdentityFile $HOME/.ssh/deploy_key
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile $HOME/.ssh/known_hosts
+            ServerAliveInterval 15
+            ServerAliveCountMax 3
+            ConnectTimeout 10
+          CONFIG
+      - name: Prepare target release
+        run: |
+          RELEASE=$(cat release/release-id)
+          [[ "$RELEASE" =~ ^[a-f0-9]{40}-[0-9]+-[0-9]+$ ]]
+          ssh warehouse-target "test -r /opt/warehouse-assessment/.env && mkdir -p /opt/warehouse-assessment/releases/$RELEASE"
+      - name: Upload source with resumable retries
+        run: |
+          RELEASE=$(cat release/release-id)
+          for attempt in 1 2 3; do
+            if rsync -az --partial --partial-dir=.rsync-partial --timeout=60 -e "ssh -F $HOME/.ssh/config" release/ "warehouse-target:/opt/warehouse-assessment/releases/$RELEASE/"; then exit 0; fi
+            test "$attempt" != 3 || exit 1
+            sleep 5
+          done
+      - name: Start background deployment
+        run: |
+          RELEASE=$(cat release/release-id)
+          ssh warehouse-target bash -s -- "$RELEASE" <<'REMOTE'
+          set -eu
+          cd "/opt/warehouse-assessment/releases/$1"
+          test ! -e deploy.done
+          setsid nohup bash -c '
+            bash scripts/deploy.sh /opt/warehouse-assessment "$1" > deploy.log 2>&1
+            status=$?
+            printf "%s\n" "$status" > deploy.done
+          ' deploy "$1" < /dev/null > /dev/null 2>&1 &
+          REMOTE
+      - name: Observe actual deployment result
+        run: |
+          RELEASE=$(cat release/release-id)
+          for attempt in $(seq 1 120); do
+            DONE=$(ssh warehouse-target "cat /opt/warehouse-assessment/releases/$RELEASE/deploy.done 2>/dev/null" || true)
+            if [ -n "$DONE" ]; then
+              ssh warehouse-target "cat /opt/warehouse-assessment/releases/$RELEASE/deploy.log"
+              test "$DONE" = 0
+              exit
+            fi
+            sleep 15
+          done
+          echo '::error::Deployment timed out; inspect retained release logs.'
+          exit 1
+      - name: Verify loopback readiness
+        run: |
+          ssh warehouse-target bash -s <<'REMOTE'
+          set -eu
+          cd /opt/warehouse-assessment/current
+          for pair in 'api /api/v1/ready' 'frontend /health'; do
+            set -- $pair
+            endpoint=$(docker compose -p warehouse --env-file /opt/warehouse-assessment/.env --env-file images.env -f compose.production.yml port "$1" 8080)
+            curl --fail --silent --show-error --max-time 10 "http://$endpoint$2" > /dev/null
+          done
+          REMOTE
+      - name: Record operator-gated public acceptance
+        run: |
+          echo '::warning::Owner requested public acceptance pending. Verify direct host-Nginx API routing and measured Gin proxy trust separately; loopback readiness is not public acceptance.'
+          echo 'Public HTTPS acceptance: pending operator-owned routing/proxy verification (owner decision).' >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove temporary SSH material
+        if: always()
+        run: rm -f "$HOME/.ssh/deploy_key" "$HOME/.ssh/config" "$HOME/.ssh/known_hosts"

@@ -1,5 +1,5 @@
 # Warehouse Receiving & Inventory Tracking System
-This workspace contains the locked specifications and the core backend: authentication/session/RBAC, products, receiving documents/transactions, Supervisor correction/review/approval, inventory and audit reads, RabbitMQ notification delivery and notification REST operations. Frontend implementation remains later work.
+This workspace contains the locked specifications and the core backend: authentication/session/RBAC, products, receiving documents/transactions, Supervisor correction/review/approval, inventory and audit reads, RabbitMQ notification delivery and notification REST operations. The React frontend covers the approved receiving, inventory and notification workflows.
 
 ## Documents
 - `docs/prd.md` — English PRD / business source of truth.
@@ -16,6 +16,9 @@ This workspace contains the locked specifications and the core backend: authenti
 - `docs/task-3a-report.md` — frontend foundation/authentication, npm recovery, actual browser verification and delivery evidence.
 - `docs/task-3b-report.md` — product and receiving document UI, role restrictions and real backend/browser evidence.
 - `docs/task-3c-report.md` — transaction entry/history, Supervisor decisions and inventory correctness evidence from real browser workflows.
+- `docs/task-3d-3e-report.md` — completed frontend, production containers/CI and actual deployment evidence.
+- `docs/deployment.md` — host Nginx boundary, private configuration, release workflow and recovery.
+- `docs/task-4-test-plan.md` — future public full E2E plan; not executed in Task 3D/3E.
 - `docs/data-flow.mmd` — Mermaid business flow.
 - `docs/rbac.md` — explicit role/action matrix.
 - `docs/testing.md` — small critical test suite and evidence plan.
@@ -27,7 +30,7 @@ This workspace contains the locked specifications and the core backend: authenti
 2. Reference projects are under `/home/tyomaans/Projects`: `auth-session`, `clone-mini-erp`, `web-profile/web-profile-frontend`, and `search-feature-node-js`.
 3. Prompt 1 inspected actual conventions; Task 1B resolved the differences. See `docs/conventions-audit.md`.
 4. Validate the locked `docs/openapi.yml` and maintain cross-document consistency **before** implementation.
-5. Tasks 2A–2E cover the backend and notifications. Task 2E's initial smoke-harness credentials were corrected during authorized verification; the compiled API/worker smoke and required checks passed. Commit/push uses the reviewed explicit Task 2E manifest. Stop after Task 2E; frontend implementation requires further authorization.
+5. Tasks 2A–2E implemented the backend; Tasks 3A–3C implemented authentication, products, documents and receiving decisions. The owner authorized combined Task 3D/3E for the remaining frontend, production stack and deployment. Task 4 is planning only and requires a separate execution.
 6. Add actual application code, migrations, Dockerfiles/Compose, `.env.example`, and a real deployment README. Record tests, limitations, and Git commits.
 
 ## Assessment
@@ -51,7 +54,7 @@ docker compose run --rm --no-deps migrate
 docker compose stop
 ```
 
-Stopping preserves named volumes. PostgreSQL, Redis, RabbitMQ and its management interface have no host-published ports. Nginx binds to localhost, forwards `/api/v1` unchanged, and has a fixed trusted proxy address configured by `NGINX_IP` inside `WAREHOUSE_SUBNET`. `WAREHOUSE_IP_RANGE` keeps dynamic service allocation away from that address. Change all three together if the subnet conflicts locally, keeping Nginx outside the dynamic range. `HTTP_PORT` defaults to 8080. TLS/public deployment remains later deployment work.
+Stopping preserves named volumes. PostgreSQL, Redis, RabbitMQ and its management interface have no host-published ports. The API binds to `127.0.0.1:8080` and the production-asset frontend server to `127.0.0.1:5173` by default. Open http://127.0.0.1:5173; its same-origin `/api/v1` relay preserves cookie behavior. Adjust `API_PORT`, `FRONTEND_PORT` and `WAREHOUSE_SUBNET` if necessary. No project Nginx instance/configuration is used; public HTTPS belongs to the existing host Nginx. See `docs/deployment.md` for the separate production stack.
 
 `/api/v1/health` returns `{"success":true,"message":"healthy","data":{"status":"ok"}}`. `/api/v1/ready` checks PostgreSQL, migration checksums and Redis, returning 503 with the locked nested error envelope when unavailable. RabbitMQ connects/retries independently and reports status through structured logs. The API image runs as UID 10001 and drains HTTP requests on SIGTERM before closing infrastructure. The notification worker is a separate command/process; broker availability does not gate receiving commits or API readiness.
 
@@ -132,7 +135,7 @@ TEST_RABBITMQ_URL='amqp://user:password@127.0.0.1:5672/' \
 go test -count=1 -v ./...
 ```
 
-The task reports list exact executed commands, including writable temporary caches used by the agent environment. API tests authenticate through real PostgreSQL/Redis-backed login and exercise the production router. Set `CONTRACT_EVIDENCE_PATH='/tmp/warehouse-{test}.json'` to export each integration test's business responses separately for OpenAPI validation; authentication tokens are not exported. Task 2E's compiled API/worker smoke passed after correcting the temporary harness's stale credentials and discovering current test-container ports. It verified real broker outage/reconnection, duplicate delivery, recipient isolation, preserved inventory and graceful process shutdown/restart. Browser/frontend verification remains later work.
+The task reports list exact executed commands, including writable temporary caches used by the agent environment. API tests authenticate through real PostgreSQL/Redis-backed login and exercise the production router. Set `CONTRACT_EVIDENCE_PATH='/tmp/warehouse-{test}.json'` to export each integration test's business responses separately for OpenAPI validation; authentication tokens are not exported. Task 2E's compiled API/worker smoke passed after correcting the temporary harness's stale credentials and discovering current test-container ports. It verified real broker outage/reconnection, duplicate delivery, recipient isolation, preserved inventory and graceful process shutdown/restart. Subsequent frontend reports record real browser verification; production evidence is in the combined Task 3D/3E report.
 
 ## Locked implementation conventions
 Canonical 22-character Base64URL UUID v4 IDs; clone-style success/nested error envelopes and management pagination; strict binding plus validator/service checks; auth-session JWT and Redis/cookie revocation; versioned SQL migrations; typed React fetch with shared refresh and one retry. Exact contracts are in `docs/openapi.yml` and `docs/technical-spec.md`. No unresolved convention conflict remains after Task 1B.
@@ -164,9 +167,9 @@ npm test
 npm run preview
 ```
 
-Vite development uses localhost port 5173 and preview uses 4173. Both proxy `/api/v1` unchanged to `API_PROXY_TARGET`; `VITE_API_BASE_URL` defaults to `/api/v1`. Optional configuration is documented in `frontend/.env.example`. API requests remain same-origin because the backend uses host-only SameSite Strict cookies and has no cross-origin CORS configuration. No backend cookie or proxy configuration was changed. Production frontend container/Nginx static hosting is not implemented in this scaffold.
+Vite development uses localhost port 5173 and preview uses 4173. Both proxy `/api/v1` unchanged to `API_PROXY_TARGET`; `VITE_API_BASE_URL` defaults to `/api/v1`. Optional configuration is documented in `frontend/.env.example`. API requests remain same-origin because the backend uses host-only SameSite Strict cookies and has no cross-origin CORS configuration. No backend cookie or proxy configuration was changed. Production serving uses `frontend/Dockerfile` and the bounded Node HTTP server, with hashed-asset caching and React Router SPA fallback. `compose.production.yml` binds frontend/API to loopback only, behind operator-owned host Nginx.
 
-Routes include `/login`, `/`, `/products`, `/receivings`, `/receivings/new`, `/receivings/:id`, `/receivings/:id/transactions/new`, `/transactions`, `/transactions/:id` and Supervisor-only `/transactions/review`. Products are readable by both roles and creatable by Supervisor. Both roles can list/read documents and transactions; Operator creates documents and records physical receipts. Supervisor corrects unresolved rejected input, resolves confirmed excess and approves pending transactions. Transaction/review navigation starts with document selection because history is scoped to an RCV in the API. Inventory and notifications remain labeled planned views; overview contains navigation/workflow guidance.
+Routes include `/login`, `/`, `/products`, `/receivings`, `/receivings/new`, `/receivings/:id`, `/receivings/:id/transactions/new`, `/transactions`, `/transactions/:id` and Supervisor-only `/transactions/review`. Products are readable by both roles and creatable by Supervisor. Both roles can list/read documents and transactions; Operator creates documents and records physical receipts. Supervisor corrects unresolved rejected input, resolves confirmed excess and approves pending transactions. Transaction/review navigation starts with document selection because history is scoped to an RCV in the API. Both roles can view inventory balances/source-linked ledger and their own notifications, mark updates read, and use the dashboard’s actual receiving/inventory/notification summaries. Dashboard counts use server totals; previews are explicitly labeled subsets.
 
 Receiving creation supports multiple SKU lines, paginated product lookup, duplicate-SKU prevention, positive int64 quantities and duplicate ORD feedback. Expected quantities cannot be edited after creation. Quantities use BigInt internally and numeric JSON tokens on the wire, preserving the entire int64 range. Values above JavaScript's safe integer range require a modern browser with JSON source access and `JSON.rawJSON`; the tested Chrome supports both. Older engines reject unsafe values rather than silently rounding them. No new npm dependency is needed.
 
@@ -186,6 +189,16 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/path/to/chrome \
 npm run test:browser
 ```
 
-Without an executable override, Playwright uses its managed Chromium installation. Browser artifacts default to `/tmp/warehouse-playwright-results`; traces are disabled to avoid capturing authentication secrets. The full suite uses Vite development modules for some authentication checks. `npm run test:browser -- tests/catalogue-receiving.spec.ts` runs the three Task 3B browser workflows against development or production preview, creating uniquely named fixtures in the disposable backend. Supply the same role credentials as above. Optional `E2E_SCREENSHOT_DIR` and `E2E_CONTRACT_DIR` keep screenshots and completed business response captures outside the repository. Production frontend static hosting remains deferred.
+Without an executable override, Playwright uses its managed Chromium installation. Browser artifacts default to `/tmp/warehouse-playwright-results`; traces are disabled to avoid capturing authentication secrets. The full suite uses Vite development modules for some authentication checks. `npm run test:browser -- tests/catalogue-receiving.spec.ts` runs the three Task 3B browser workflows against development or production preview, creating uniquely named fixtures in the disposable backend. Supply the same role credentials as above. Optional `E2E_SCREENSHOT_DIR` and `E2E_CONTRACT_DIR` keep screenshots and completed business response captures outside the repository. Production container verification and deployment are documented in `docs/task-3d-3e-report.md`.
 
 `npm run test:browser -- tests/receiving-transactions.spec.ts` runs three Task 3C browser scenarios against development or production preview: partial approval through all-SKU completion, correction/resolution of excess, maximum-int64 precision and a competing approval with exactly-once inventory evidence. These use both provisioned roles, create uniquely named isolated fixtures, and verify stock/ledger/audit through existing backend APIs. They do not require an inventory UI or notification worker.
+
+## Inventory, notifications and production deployment
+
+`/inventory` shows approved inbound balances with contract search/pagination. `/inventory?view=history` shows immutable movements, optional canonical `product_id` filtering, source TRX/RCV links and SKU labels joined from actual source documents. All quantity fields use exact BigInt decoding; approval invalidates these actor-scoped caches. There is no stock adjustment or outbound workflow.
+
+`/notifications` lists only the authenticated recipient’s delivered updates with read state/timestamps and mark-as-read. It polls once per minute while visible, with no hidden-tab polling. Logout/account changes clear session caches. The dashboard uses metadata totals for incomplete/completed documents, posted SKUs and own delivered notifications; it never calls a paginated subset a global unread or quantity total.
+
+The combined Task 3D/3E uses the audited clone-mini-erp source-artifact/SSH/VPS-build workflow, immutable release tags, locks, private backups, migrations, health gates and application rollback. The five existing deployment secrets are reused unchanged. Production serves assets without Vite or project Nginx; only the host’s existing Nginx handles public HTTPS. Setup, the exact operator-owned `/api/v1/` route and measured trusted-proxy procedure are in [deployment.md](docs/deployment.md). The target is **https://wh.tyomaaans.cloud**; actual acceptance status is in [the combined report](docs/task-3d-3e-report.md), not inferred from a successful push/startup.
+
+Run `python3 scripts/check-deployment.py`, `python3 scripts/test-deploy.py` and `python3 scripts/verify-production.py` for deployment boundaries, simulated rollback cases and actual isolated production-stack acceptance respectively. The latter requires the documented Go/Node/npm toolchain, installed frontend dependencies and Chrome. It retains private evidence/data and stops only its own task stack. These checks do not execute Task 4. The separate [Task 4 test plan](docs/task-4-test-plan.md) targets the public HTTPS deployment.

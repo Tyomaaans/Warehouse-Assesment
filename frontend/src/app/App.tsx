@@ -6,8 +6,9 @@ import { ProtectedRoute } from '../features/auth/ProtectedRoute';
 import { OverviewPage } from '../features/overview/OverviewPage';
 import { AppShell } from '../components/layout/AppShell';
 import { EmptyState } from '../components/ui/States';
-import { FeaturePlaceholder } from './FeaturePlaceholder';
-import { areas, reviewArea } from './navigation';
+import { reviewArea } from './navigation';
+import { InventoryPage } from '../features/inventory/InventoryPage';
+import { NotificationsPage } from '../features/notifications/NotificationsPage';
 import { queryClient } from './query-client';
 import { ProductsPage } from '../features/products/ProductsPage';
 import { ReceivingListPage } from '../features/receiving/ReceivingListPage';
@@ -28,7 +29,8 @@ export function App() {
       <Route element={<ProtectedRoute roles={['OPERATOR']} />}><Route path="/receivings/:id/transactions/new" element={<TransactionEntryPage />} /></Route>
       <Route path="/transactions" element={<ReceivingListPage mode="transactions" />} />
       <Route path="/transactions/:id" element={<TransactionDetailPage />} />
-      {areas.filter(area => !['/', '/products', '/receivings', '/transactions'].includes(area.path)).map(area => <Route key={area.path} path={area.path} element={<FeaturePlaceholder {...area} planned={area.planned!} />} />)}
+      <Route path="/inventory" element={<InventoryPage />} />
+      <Route path="/notifications" element={<NotificationsPage />} />
       <Route element={<ProtectedRoute roles={['SUPERVISOR']} />}><Route path={reviewArea.path} element={<ReceivingListPage mode="review" />} /></Route>
       <Route path="*" element={<EmptyState title="This page isn’t here.">Return to the <Link className="text-link" to="/">workspace overview</Link> to find your way.</EmptyState>} />
     </Route></Route>

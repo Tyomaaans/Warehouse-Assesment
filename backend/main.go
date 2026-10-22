@@ -52,8 +52,8 @@ func main() {
 }
 
 func run(ctx context.Context, logger zerolog.Logger, command string) error {
-	if command != "serve" && command != "migrate" && command != "provision-users" && command != "notification-worker" {
-		return fmt.Errorf("command must be serve, migrate, provision-users, notification-worker or healthcheck")
+	if command != "serve" && command != "migrate" && command != "provision-users" && command != "notification-worker" && command != "outbox-publisher" && command != "notification-consumer" && command != "worker-healthcheck" {
+		return fmt.Errorf("unknown application command")
 	}
 	cfg, err := config.NewConfig()
 	if err != nil {
@@ -75,6 +75,19 @@ func run(ctx context.Context, logger zerolog.Logger, command string) error {
 		return fmt.Errorf("PostgreSQL pool unavailable")
 	}
 	defer sqlDB.Close()
+	if command == "worker-healthcheck" {
+		probe, cancelProbe := context.WithTimeout(ctx, 5*time.Second)
+		defer cancelProbe()
+		if err := migrations.Check(probe, db); err != nil {
+			return err
+		}
+		broker, err := notifications.NewBroker(probe, cfg.RabbitMQURL)
+		if err != nil {
+			return fmt.Errorf("notification infrastructure unavailable")
+		}
+		broker.Close()
+		return nil
+	}
 	if command == "migrate" {
 		if err := migrations.Run(startup, db); err != nil {
 			return fmt.Errorf("migration failed; verify schema and migration checksums")
@@ -96,12 +109,19 @@ func run(ctx context.Context, logger zerolog.Logger, command string) error {
 		logger.Info().Str("event", "users_provisioned").Int("created", created).Msg("role accounts provisioned; existing accounts preserved")
 		return nil
 	}
-	if command == "notification-worker" {
+	if command == "notification-worker" || command == "outbox-publisher" || command == "notification-consumer" {
 		if cfg.RabbitMQURL == "" {
 			return fmt.Errorf("RABBITMQ_URL is required for notification-worker")
 		}
-		notifications.RunWorker(ctx, notifications.NewOutboxRepository(db), notifications.NewNotificationRepository(db), cfg.RabbitMQURL,
-			logger.With().Str("component", "notifications").Logger())
+		workerLogger := logger.With().Str("component", command).Logger()
+		switch command {
+		case "outbox-publisher":
+			notifications.RunPublisher(ctx, notifications.NewOutboxRepository(db), cfg.RabbitMQURL, workerLogger)
+		case "notification-consumer":
+			notifications.RunConsumer(ctx, notifications.NewNotificationRepository(db), cfg.RabbitMQURL, workerLogger)
+		default:
+			notifications.RunWorker(ctx, notifications.NewOutboxRepository(db), notifications.NewNotificationRepository(db), cfg.RabbitMQURL, workerLogger)
+		}
 		return nil
 	}
 	redisClient, err := redis.NewRedisClient(startup, cfg.RedisURL, logger)

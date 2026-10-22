@@ -9,7 +9,7 @@ x-api-environment: &api-environment
   DATABASE_URL: postgres://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-warehouse}?sslmode=disable
   REDIS_URL: redis://redis:6379/0
   RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}@rabbitmq:5672/
-  TRUSTED_PROXIES: ${NGINX_IP:-172.30.80.2}
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
 
 services:
   postgres:
@@ -67,6 +67,7 @@ services:
     networks: [warehouse]
 
   api:
+    ports: ["127.0.0.1:${API_PORT:-8080}:8080"]
     image: wh-assessment-backend:foundation
     build: ./backend
     environment: *api-environment
@@ -97,30 +98,23 @@ services:
     stop_grace_period: 15s
     networks: [warehouse]
 
-  nginx:
-    image: nginx:1.30.6-alpine
-    ports:
-      - "127.0.0.1:${HTTP_PORT:-8080}:80"
-    volumes:
-      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+  frontend:
+    image: wh-assessment-frontend:development
+    build: ./frontend
+    ports: ["127.0.0.1:${FRONTEND_PORT:-5173}:8080"]
+    environment:
+      API_PROXY_TARGET: http://api:8080
     depends_on:
-      api:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/api/v1/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    networks:
-      warehouse:
-        ipv4_address: ${NGINX_IP:-172.30.80.2}
+      api: {condition: service_healthy}
+    networks: [warehouse]
+    restart: unless-stopped
+    stop_grace_period: 15s
 
 networks:
   warehouse:
     ipam:
       config:
         - subnet: ${WAREHOUSE_SUBNET:-172.30.80.0/24}
-          ip_range: ${WAREHOUSE_IP_RANGE:-172.30.80.128/25}
 
 volumes:
   postgres-data:
