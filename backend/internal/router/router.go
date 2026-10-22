@@ -11,6 +11,7 @@ import (
 	"warehouse/internal/auth/user"
 	"warehouse/internal/inventory"
 	"warehouse/internal/middleware"
+	"warehouse/internal/notifications"
 	"warehouse/internal/products"
 	"warehouse/internal/receiving"
 	"warehouse/pkg"
@@ -25,6 +26,7 @@ func NewRouter(
 	productHandler *products.ProductHandler,
 	receivingHandler *receiving.ReceivingHandler,
 	inventoryHandler *inventory.InventoryHandler,
+	notificationHandler *notifications.NotificationHandler,
 ) (*gin.Engine, error) {
 	r := gin.New()
 	if err := r.SetTrustedProxies(trustedProxies); err != nil {
@@ -54,6 +56,8 @@ func NewRouter(
 	protected.GET("/inventory", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), inventoryHandler.GetBalances)
 	protected.GET("/inventory/transactions", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), inventoryHandler.GetMovements)
 	protected.GET("/receiving-audit-logs", authMiddleware.RequireRole(pkg.Supervisor), receivingHandler.GetAuditLogs)
+	protected.GET("/notifications", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), notificationHandler.GetNotifications)
+	protected.PATCH("/notifications/:id/read", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), notificationHandler.MarkRead)
 	v1.GET("/health", func(c *gin.Context) {
 		pkg.SuccessResponse(c, http.StatusOK, "healthy", gin.H{"status": "ok"})
 	})

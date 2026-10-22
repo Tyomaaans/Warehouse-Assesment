@@ -1,5 +1,5 @@
 # Warehouse Receiving & Inventory Tracking System
-This workspace contains the locked specifications and the core backend: authentication/session/RBAC, products, receiving documents/transactions, Supervisor correction/review/approval, inventory and audit reads. Notification delivery and frontend implementation remain later tasks.
+This workspace contains the locked specifications and the core backend: authentication/session/RBAC, products, receiving documents/transactions, Supervisor correction/review/approval, inventory and audit reads, RabbitMQ notification delivery and notification REST operations. Frontend implementation remains later work.
 
 ## Documents
 - `docs/prd.md` — English PRD / business source of truth.
@@ -12,6 +12,7 @@ This workspace contains the locked specifications and the core backend: authenti
 - `docs/task-2b-report.md` — authentication/session/RBAC implementation and verification evidence.
 - `docs/task-2c-report.md` — product/receiving-document implementation, tests and Git delivery evidence.
 - `docs/task-2d-report.md` — core receiving/inventory implementation, concurrency/rollback evidence and Git delivery.
+- `docs/task-2e-report.md` — notification implementation, integration/recovery evidence and completed compiled-server verification.
 - `docs/data-flow.mmd` — Mermaid business flow.
 - `docs/rbac.md` — explicit role/action matrix.
 - `docs/testing.md` — small critical test suite and evidence plan.
@@ -23,7 +24,7 @@ This workspace contains the locked specifications and the core backend: authenti
 2. Reference projects are under `/home/tyomaans/Projects`: `auth-session`, `clone-mini-erp`, `web-profile/web-profile-frontend`, and `search-feature-node-js`.
 3. Prompt 1 inspected actual conventions; Task 1B resolved the differences. See `docs/conventions-audit.md`.
 4. Validate the locked `docs/openapi.yml` and maintain cross-document consistency **before** implementation.
-5. Tasks 2A–2D cover the foundation and core backend. Task 2D authorizes a verified separate commit/push to `origin/main`; required outbox rows are included, with delivery/workers deferred. Stop after Task 2D; notifications and frontend require further authorization.
+5. Tasks 2A–2E cover the backend and notifications. Task 2E's initial smoke-harness credentials were corrected during authorized verification; the compiled API/worker smoke and required checks passed. Commit/push uses the reviewed explicit Task 2E manifest. Stop after Task 2E; frontend implementation requires further authorization.
 6. Add actual application code, migrations, Dockerfiles/Compose, `.env.example`, and a real deployment README. Record tests, limitations, and Git commits.
 
 ## Assessment
@@ -40,7 +41,7 @@ curl --fail http://127.0.0.1:8080/api/v1/health
 curl --fail http://127.0.0.1:8080/api/v1/ready
 ```
 
-Compose runs the explicit one-shot `migrate` command before starting the API. Migrations are numbered, embedded, checksum-verified and protected by a PostgreSQL transaction advisory lock. The API checks the schema before serving and during readiness; it never runs AutoMigrate. To rerun the migration command:
+Compose runs the explicit one-shot `migrate` command before starting the API and notification worker. Migrations are numbered, embedded, checksum-verified and protected by a PostgreSQL transaction advisory lock. The API checks the schema before serving and during readiness; it never runs AutoMigrate. To rerun the migration command:
 
 ```sh
 docker compose run --rm --no-deps migrate
@@ -49,7 +50,7 @@ docker compose stop
 
 Stopping preserves named volumes. PostgreSQL, Redis, RabbitMQ and its management interface have no host-published ports. Nginx binds to localhost, forwards `/api/v1` unchanged, and has a fixed trusted proxy address configured by `NGINX_IP` inside `WAREHOUSE_SUBNET`. `WAREHOUSE_IP_RANGE` keeps dynamic service allocation away from that address. Change all three together if the subnet conflicts locally, keeping Nginx outside the dynamic range. `HTTP_PORT` defaults to 8080. TLS/public deployment remains later deployment work.
 
-`/api/v1/health` returns `{"success":true,"message":"healthy","data":{"status":"ok"}}`. `/api/v1/ready` checks PostgreSQL, migration checksums and Redis, returning 503 with the locked nested error envelope when unavailable. RabbitMQ connects/retries independently and reports status through structured logs; no notification worker or topology is created in Task 2A. The API image runs as UID 10001 and drains HTTP requests on SIGTERM before closing infrastructure.
+`/api/v1/health` returns `{"success":true,"message":"healthy","data":{"status":"ok"}}`. `/api/v1/ready` checks PostgreSQL, migration checksums and Redis, returning 503 with the locked nested error envelope when unavailable. RabbitMQ connects/retries independently and reports status through structured logs. The API image runs as UID 10001 and drains HTTP requests on SIGTERM before closing infrastructure. The notification worker is a separate command/process; broker availability does not gate receiving commits or API readiness.
 
 Health/readiness and POST `/api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/logout` remain registered. Task 2C also exposes:
 
@@ -79,7 +80,22 @@ Task 2D adds:
 
 Transaction submission accepts nonempty `items` containing `receiving_document_item_id` and positive-int64 `actual_quantity`. Each line must belong to the RCV, without duplicates. Only one pending or unresolved rejected transaction is active at a time. Over-limit attempts remain `REJECTED_BY_SYSTEM`/`UNRESOLVED`; they do not alter stock. Corrections require a reason and the complete replacement item list, retain TRX/RCV IDs and retained-line IDs, and revalidate the cap. Approved and rejected/resolved transactions are terminal. Repeated approval returns 409.
 
-Approval locks RCV then TRX and increments balances in product-ID order. Approval metadata, unique-source ledger rows, balances, completion, audit and outbox records commit together. An RCV completes only when every SKU's approved total equals its expected quantity. Inventory balances appear on first approved posting; product creation and pending/rejected transactions write no inventory. Ledger rows expose source item/TRX/RCV IDs. Notifications are not delivered: required outbox events remain unpublished for Task 2E, and notification/identity/registration routes remain unregistered.
+Approval locks RCV then TRX and increments balances in product-ID order. Approval metadata, unique-source ledger rows, balances, completion, audit and outbox records commit together. An RCV completes only when every SKU's approved total equals its expected quantity. Inventory balances appear on first approved posting; product creation and pending/rejected transactions write no inventory. Ledger rows expose source item/TRX/RCV IDs. Identity and registration routes remain unregistered.
+
+Task 2E adds the two locked notification operations, both available to either authenticated role:
+
+| Method/path | Behavior |
+|---|---|
+| GET `/api/v1/notifications` | List the authenticated recipient's notifications using `page`/`limit`; collection `notifications` with sibling `meta` |
+| PATCH `/api/v1/notifications/{id}/read` | Mark an owned notification read; repeated calls preserve its first `read_at`; inaccessible IDs return 404 |
+
+No recipient selector, unread filter, mark-unread or extra notification route is defined. SQL predicates and services use the authenticated actor. Responses expose canonical IDs and only the current recipient's data.
+
+The Compose `notification-worker` service shares the backend image and runs `warehouse notification-worker`. For a local binary, run the same command with `DATABASE_URL` and `RABBITMQ_URL` after migrations. It needs no JWT secret or Redis connection. It declares durable direct exchange/queue `warehouse.notifications`, with bindings for the five existing outbox event types. Messages are persistent, mandatory and publisher-confirmed. Migration `002_outbox_delivery.sql` adds delivery leases/retry bookkeeping while retaining original IDs/payloads.
+
+Publishers claim one event through a short `FOR UPDATE SKIP LOCKED` statement and a 30-second fenced lease. Broker I/O has a five-second deadline and holds no database transaction. Transient failures release the lease with persisted backoff of 1–32 seconds; worker connection retries wait one second. Crash recovery reclaims expired leases. A confirmed publication followed by a lost database update may be delivered again; the consumer deduplicates by `(source_event_id, recipient_id)`.
+
+Consumers use manual acknowledgement and prefetch 1. They verify the payload against its committed outbox source, then persist the complete recipient fanout atomically before acknowledgement. Database failures requeue and reconnect with delay. Duplicate delivery preserves notification ID and read state. Invalid payloads go to durable queue `warehouse.notifications.dead` for manual inspection; no automatic dead-letter replay is added. SIGTERM cancels workers and closes connections so unacknowledged deliveries can be retried. No WebSocket or external messaging is involved.
 
 Provision the two role accounts explicitly. Export `OPERATOR_EMAIL`, `OPERATOR_PASSWORD`, `SUPERVISOR_EMAIL` and `SUPERVISOR_PASSWORD` in your shell, then run:
 
@@ -104,15 +120,16 @@ go test ./...
 go vet ./...
 ```
 
-Tests cover T01–T08 core receiving scenarios, auth/session/RBAC, product/document validation, snapshots, correction/review, concurrent active transactions and approvals, shared-stock increments, and full rollback on inventory/outbox failures. PostgreSQL/Redis integration tests skip explicitly unless both `TEST_DATABASE_URL` (a PostgreSQL URL) and `TEST_REDIS_URL` are set. Use disposable infrastructure: the suite creates and removes unique database schemas and uses isolated user/session IDs, without flushing Redis. To run them:
+Tests cover T01–T08 core receiving scenarios, auth/session/RBAC, product/document validation, snapshots, correction/review, concurrent active transactions and approvals, shared-stock increments, and full rollback on inventory/outbox failures. Notification tests cover confirmations, leases/restart recovery, redelivery, database-failure acknowledgement, recipient isolation and shutdown. PostgreSQL/Redis integration tests skip explicitly unless both `TEST_DATABASE_URL` (a PostgreSQL URL) and `TEST_REDIS_URL` are set. RabbitMQ integration also requires `TEST_RABBITMQ_URL` pointing to a dedicated disposable broker/vhost because durable topology and messages are used. The suite creates and removes unique database schemas and uses isolated user/session IDs, without flushing Redis. To run them:
 
 ```sh
 TEST_DATABASE_URL='postgres://user:password@127.0.0.1:5432/warehouse_auth_test?sslmode=disable' \
 TEST_REDIS_URL='redis://127.0.0.1:6379/0' \
+TEST_RABBITMQ_URL='amqp://user:password@127.0.0.1:5672/' \
 go test -count=1 -v ./...
 ```
 
-The task reports list exact executed commands, including writable temporary caches used by the agent environment. API tests authenticate through real PostgreSQL/Redis-backed login and exercise the production router. Set `CONTRACT_EVIDENCE_PATH='/tmp/warehouse-{test}.json'` to export each integration test's business responses separately for OpenAPI validation; authentication tokens are not exported. The compiled-server smoke exercises partial/full receipts, rejection, correction, resolution, inventory and RBAC. Browser/frontend verification remains later work.
+The task reports list exact executed commands, including writable temporary caches used by the agent environment. API tests authenticate through real PostgreSQL/Redis-backed login and exercise the production router. Set `CONTRACT_EVIDENCE_PATH='/tmp/warehouse-{test}.json'` to export each integration test's business responses separately for OpenAPI validation; authentication tokens are not exported. Task 2E's compiled API/worker smoke passed after correcting the temporary harness's stale credentials and discovering current test-container ports. It verified real broker outage/reconnection, duplicate delivery, recipient isolation, preserved inventory and graceful process shutdown/restart. Browser/frontend verification remains later work.
 
 ## Locked implementation conventions
 Canonical 22-character Base64URL UUID v4 IDs; clone-style success/nested error envelopes and management pagination; strict binding plus validator/service checks; auth-session JWT and Redis/cookie revocation; versioned SQL migrations; typed React fetch with shared refresh and one retry. Exact contracts are in `docs/openapi.yml` and `docs/technical-spec.md`. No unresolved convention conflict remains after Task 1B.

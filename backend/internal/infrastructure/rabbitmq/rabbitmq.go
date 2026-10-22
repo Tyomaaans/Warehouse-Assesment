@@ -15,6 +15,8 @@ type RabbitMQ struct {
 	ch   *amqp.Channel
 }
 
+func (r *RabbitMQ) Channel() *amqp.Channel { return r.ch }
+
 func NewRabbitMQClient(ctx context.Context, dsn string) (*RabbitMQ, error) {
 	dialCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()

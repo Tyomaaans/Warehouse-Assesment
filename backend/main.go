@@ -22,6 +22,7 @@ import (
 	"warehouse/internal/infrastructure/redis"
 	"warehouse/internal/inventory"
 	"warehouse/internal/middleware"
+	"warehouse/internal/notifications"
 	"warehouse/internal/products"
 	"warehouse/internal/receiving"
 	"warehouse/internal/router"
@@ -51,8 +52,8 @@ func main() {
 }
 
 func run(ctx context.Context, logger zerolog.Logger, command string) error {
-	if command != "serve" && command != "migrate" && command != "provision-users" {
-		return fmt.Errorf("command must be serve, migrate, provision-users or healthcheck")
+	if command != "serve" && command != "migrate" && command != "provision-users" && command != "notification-worker" {
+		return fmt.Errorf("command must be serve, migrate, provision-users, notification-worker or healthcheck")
 	}
 	cfg, err := config.NewConfig()
 	if err != nil {
@@ -95,6 +96,14 @@ func run(ctx context.Context, logger zerolog.Logger, command string) error {
 		logger.Info().Str("event", "users_provisioned").Int("created", created).Msg("role accounts provisioned; existing accounts preserved")
 		return nil
 	}
+	if command == "notification-worker" {
+		if cfg.RabbitMQURL == "" {
+			return fmt.Errorf("RABBITMQ_URL is required for notification-worker")
+		}
+		notifications.RunWorker(ctx, notifications.NewOutboxRepository(db), notifications.NewNotificationRepository(db), cfg.RabbitMQURL,
+			logger.With().Str("component", "notifications").Logger())
+		return nil
+	}
 	redisClient, err := redis.NewRedisClient(startup, cfg.RedisURL, logger)
 	if err != nil {
 		return err
@@ -132,8 +141,9 @@ func run(ctx context.Context, logger zerolog.Logger, command string) error {
 	productSvc := products.NewProductService(products.NewProductRepository(db), pkg.NewValidator())
 	receivingSvc := receiving.NewReceivingService(receiving.NewReceivingRepository(db), pkg.NewValidator())
 	inventorySvc := inventory.NewInventoryService(inventory.NewInventoryRepository(db))
+	notificationSvc := notifications.NewNotificationService(notifications.NewNotificationRepository(db))
 	r, err := router.NewRouter(logger, ready, cfg.TrustedProxies, authHandler, authMiddleware,
-		products.NewProductHandler(productSvc), receiving.NewReceivingHandler(receivingSvc), inventory.NewInventoryHandler(inventorySvc))
+		products.NewProductHandler(productSvc), receiving.NewReceivingHandler(receivingSvc), inventory.NewInventoryHandler(inventorySvc), notifications.NewNotificationHandler(notificationSvc))
 	if err != nil {
 		return fmt.Errorf("invalid trusted proxies")
 	}

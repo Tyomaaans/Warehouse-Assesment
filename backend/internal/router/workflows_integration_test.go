@@ -25,6 +25,7 @@ import (
 	redisinfra "warehouse/internal/infrastructure/redis"
 	"warehouse/internal/inventory"
 	"warehouse/internal/middleware"
+	"warehouse/internal/notifications"
 	"warehouse/internal/products"
 	"warehouse/internal/receiving"
 	"warehouse/internal/receiving/domain"
@@ -108,7 +109,8 @@ func newWorkflowFixture(t *testing.T) *workflowFixture {
 	receivingHandler := receiving.NewReceivingHandler(receiving.NewReceivingService(receiving.NewReceivingRepository(db), pkg.NewValidator()))
 	gin.SetMode(gin.ReleaseMode)
 	inventoryHandler := inventory.NewInventoryHandler(inventory.NewInventoryService(inventory.NewInventoryRepository(db)))
-	f.router, err = router.NewRouter(zerolog.Nop(), func(context.Context) error { return nil }, nil, authHandler, authMiddleware, productHandler, receivingHandler, inventoryHandler)
+	notificationHandler := notifications.NewNotificationHandler(notifications.NewNotificationService(notifications.NewNotificationRepository(db)))
+	f.router, err = router.NewRouter(zerolog.Nop(), func(context.Context) error { return nil }, nil, authHandler, authMiddleware, productHandler, receivingHandler, inventoryHandler, notificationHandler)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +466,7 @@ func TestProductReceivingIntegration(t *testing.T) {
 		}
 	})
 	t.Run("document_creation_does_not_post_inventory_or_deliver_notifications", func(t *testing.T) {
-		for _, path := range []string{"/api/v1/notifications", "/api/v1/users/me"} {
+		for _, path := range []string{"/api/v1/notifications/unknown", "/api/v1/users/me"} {
 			for _, method := range []string{"GET", "POST"} {
 				workflowError(t, f.request(method, path, `{}`, pkg.Supervisor), 404, "not_found")
 			}

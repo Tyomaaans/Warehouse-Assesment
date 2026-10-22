@@ -78,6 +78,25 @@ services:
     stop_grace_period: 25s
     networks: [warehouse]
 
+  notification-worker:
+    image: wh-assessment-backend:foundation
+    build: ./backend
+    command: ["notification-worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgres://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-warehouse}?sslmode=disable
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}@rabbitmq:5672/
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    networks: [warehouse]
+
   nginx:
     image: nginx:1.30.6-alpine
     ports:

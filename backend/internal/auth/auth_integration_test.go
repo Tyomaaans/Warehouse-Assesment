@@ -28,6 +28,7 @@ import (
 	"warehouse/internal/infrastructure/postgres"
 	"warehouse/internal/inventory"
 	"warehouse/internal/middleware"
+	"warehouse/internal/notifications"
 	"warehouse/internal/products"
 	"warehouse/internal/receiving"
 	"warehouse/internal/router"
@@ -122,7 +123,8 @@ func newAuthFixture(t *testing.T) *authFixture {
 	f.router, err = router.NewRouter(zerolog.Nop(), func(context.Context) error { return nil }, nil, user.NewUserHandler(userSvc, true), authMiddleware,
 		products.NewProductHandler(products.NewProductService(products.NewProductRepository(db), pkg.NewValidator())),
 		receiving.NewReceivingHandler(receiving.NewReceivingService(receiving.NewReceivingRepository(db), pkg.NewValidator())),
-		inventory.NewInventoryHandler(inventory.NewInventoryService(inventory.NewInventoryRepository(db))))
+		inventory.NewInventoryHandler(inventory.NewInventoryService(inventory.NewInventoryRepository(db))),
+		notifications.NewNotificationHandler(notifications.NewNotificationService(notifications.NewNotificationRepository(db))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +275,8 @@ func TestAuthenticationIntegration(t *testing.T) {
 		r, err := router.NewRouter(zerolog.Nop(), func(context.Context) error { return nil }, nil, user.NewUserHandler(userSvc, true), authMiddleware,
 			products.NewProductHandler(products.NewProductService(products.NewProductRepository(f.db), pkg.NewValidator())),
 			receiving.NewReceivingHandler(receiving.NewReceivingService(receiving.NewReceivingRepository(f.db), pkg.NewValidator())),
-			inventory.NewInventoryHandler(inventory.NewInventoryService(inventory.NewInventoryRepository(f.db))))
+			inventory.NewInventoryHandler(inventory.NewInventoryService(inventory.NewInventoryRepository(f.db))),
+			notifications.NewNotificationHandler(notifications.NewNotificationService(notifications.NewNotificationRepository(f.db))))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -463,7 +466,7 @@ func TestAuthenticationIntegration(t *testing.T) {
 		}
 	})
 	t.Run("unfinished_workflows_remain_unregistered", func(t *testing.T) {
-		for _, path := range []string{"/api/v1/notifications", "/api/v1/transactions", "/api/v1/users/me", "/api/v1/auth/register"} {
+		for _, path := range []string{"/api/v1/notifications/unknown", "/api/v1/transactions", "/api/v1/users/me", "/api/v1/auth/register"} {
 			wantError(t, f.request("GET", path, "", "", nil), 404, "not_found")
 		}
 	})
