@@ -11,7 +11,7 @@ Read `/home/tyomaans/Projects/auth-session`, `/home/tyomaans/Projects/clone-mini
 
 **Critical rule:** Reference implementations determine serialization/style details only when compatible with frozen business semantics. Update OpenAPI to match the discovered envelope and Base64 format *before* coding; document any contract adjustments. Do not let reference business workflows override warehouse rules.
 
-**Task 1B approved decisions:** See `docs/conventions-audit.md` and locked OpenAPI version 1.1.0. The user resolved the previously reported envelope, binding, pagination, identifier and notification-deduplication differences. Use those resolutions; do not stop again on historical reference differences. Task 1B edits documentation only. Once OpenAPI and consistency validation pass, proceed to Prompt 2 as a separate phase; Prompt 3 remains the frontend/notification-worker/deployment phase.
+**Task 1B approved decisions:** See `docs/conventions-audit.md` and API contract version 1.1.0 (OpenAPI 3.0.3). The user resolved the previously reported envelope, binding, pagination, identifier and notification-deduplication differences. Use those resolutions; do not stop again on historical reference differences. Task 1B is documentation-only. Backend work was started prematurely and has been stopped at the user's direction; preserve those files for separate review. Prompt 2 requires explicit authorization before resuming. Do not commit or push until the user explicitly approves. Prompt 3 remains a later frontend/notification-worker/deployment phase.
 
 ## Three meaningful agent task prompts (record execution/results)
 ### Prompt 1 — Inspect and lock conventions
@@ -37,14 +37,14 @@ Read `/home/tyomaans/Projects/auth-session`, `/home/tyomaans/Projects/clone-mini
 | Prompt | Agent/tool | Date | Files changed | Tests executed/results | Reference patterns used | Deviations |
 |---|---|---|---|---|---|---|
 | 1 | Codex | 2026-10-22 | `docs/conventions-audit.md`, `docs/ai-workflow.md` | Not run; inspection only | Inspected actual auth-session, clone-mini-erp, nested web-profile frontend and search-feature-node-js code | Historical reference differences subsequently resolved by user-approved Task 1B |
-| 1B | Codex | 2026-10-22 | `AGENTS.md`, `README.md`, technical spec, OpenAPI, ERD, RBAC, flow, conventions audit and workflow | OpenAPI validator 0.9.0: OK; 330 cross-document assertions pass across 21 operations; PRD business text unchanged | Applied approved feature-first/auth-session, strict binding/clone envelopes and migrations, frontend client conventions | Documentation-only contract phase; no unresolved convention choices |
-| 2 | TBD | TBD | TBD | TBD | TBD | TBD |
+| 1B | Codex | 2026-10-22 | Full documentation/source manifest in `docs/task-1b-report.md` | OpenAPI validator 0.9.0: OK; 332 final consistency assertions pass across 21 operations; PRD business text unchanged | Applied approved feature-first/auth-session, strict binding/clone envelopes and migrations, frontend client conventions | Source work started beyond Task 1B scope and stopped; preserved for review. Documentation commit `295cf3b` already existed before the user's commit prohibition. No further commits/pushes authorized. |
+| 2 | Codex — stopped, not completed | 2026-10-22 | 21 untracked backend files, listed in `docs/task-1b-report.md`; ancillary `.gitignore` | Dependencies downloaded; no build, application tests or migrations executed | Partial implementation based on locked references; not reviewed or validated | Premature start acknowledged; all source work preserved and further implementation awaits explicit user authorization |
 | 3 | TBD | TBD | TBD | TBD | TBD | TBD |
 
-**Note:** Only completed execution rows are evidence. Prompt 2/3 rows remain pending until those phases actually execute. Update commands/results after real validation.
+**Note:** Prompt 2 is incomplete and stopped; Prompt 3 is unstarted. A listed file or downloaded dependency is not evidence of a working application. Record validation only after it actually runs.
 
 ### Task 1B validation evidence
 - `PYTHONPATH=/tmp/wh-contract-validation python3 -m openapi_spec_validator docs/openapi.yml` — **OK**, using openapi-spec-validator 0.9.0 installed in a temporary tool directory.
-- `python3 /tmp/wh-check-contracts.py` — **330 assertions passed**, covering local references, 21 unique operations, error responses, strict request schemas, actor/timestamp fields, ledger source links, canonical ID example, all seven pagination shapes, corrected paths/filenames and composite notification uniqueness.
+- `python3 /tmp/wh-check-contracts.py` — **332 final assertions passed** (330 before adding the completion report), covering local references, 21 unique operations, error responses, strict request schemas, actor/timestamp fields, ledger source links, canonical ID example, all seven pagination shapes, corrected paths/filenames and composite notification uniqueness.
 - PRD body matched the original specification pack; only its pre-existing version label differs. No receiving business rule was changed.
-- Task 1B created/modified documentation only. No application tests or application code belong to this phase.
+- Task 1B's authorized scope is documentation only. Premature backend files were nevertheless created, then preserved without further changes after the user stopped source work. No application tests, builds or migrations ran. See `docs/task-1b-report.md` for the exact manifest and final documentation checks.

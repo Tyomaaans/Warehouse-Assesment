@@ -50,9 +50,9 @@ erDiagram
     varchar status
     varchar review_status
     uuid created_by FK
-    uuid approved_by FK
-    uuid corrected_by FK
-    uuid reviewed_by FK
+    uuid approved_by FK "nullable; paired with approved_at"
+    uuid corrected_by FK "nullable; paired with corrected_at"
+    uuid reviewed_by FK "nullable; paired with reviewed_at"
     text rejection_reason "nullable"
     text review_note "nullable"
     timestamptz approved_at "nullable; paired with approved_by"
@@ -69,7 +69,7 @@ erDiagram
   }
   INVENTORY_BALANCES {
     uuid id PK
-    uuid product_id FK
+    uuid product_id FK, UK
     bigint quantity
     timestamptz updated_at
   }
