@@ -15,6 +15,7 @@ This workspace contains the locked specifications and the core backend: authenti
 - `docs/task-2e-report.md` — notification implementation, integration/recovery evidence and completed compiled-server verification.
 - `docs/task-3a-report.md` — frontend foundation/authentication, npm recovery, actual browser verification and delivery evidence.
 - `docs/task-3b-report.md` — product and receiving document UI, role restrictions and real backend/browser evidence.
+- `docs/task-3c-report.md` — transaction entry/history, Supervisor decisions and inventory correctness evidence from real browser workflows.
 - `docs/data-flow.mmd` — Mermaid business flow.
 - `docs/rbac.md` — explicit role/action matrix.
 - `docs/testing.md` — small critical test suite and evidence plan.
@@ -138,7 +139,7 @@ Canonical 22-character Base64URL UUID v4 IDs; clone-style success/nested error e
 
 ## Frontend development
 
-The frontend is under `frontend/`, using React/TypeScript, Vite, Tailwind, React Router and TanStack Query. Authentication, the responsive shell, product listing/creation and receiving document list/create/detail are implemented. See `docs/task-3a-report.md` for npm recovery and authentication verification, and `docs/task-3b-report.md` for the product/receiving UI evidence.
+The frontend is under `frontend/`, using React/TypeScript, Vite, Tailwind, React Router and TanStack Query. Authentication, the responsive shell, products, receiving documents and transaction entry/history/Supervisor decisions are implemented. Task reports 3A–3C record setup recovery and actual verification evidence.
 
 Use **Node 22.22.2 and npm 11.21.0**, the tested toolchain. `.nvmrc`, package-manager metadata and strict engine checks record the requirements. npm 9.2.0 crashed resolving the same dependency graph; npm 11 resolved it without changing library versions or bypassing peers. Node 22.22.1 was also below jsdom's declared minimum. With nvm, set up and run:
 
@@ -165,9 +166,11 @@ npm run preview
 
 Vite development uses localhost port 5173 and preview uses 4173. Both proxy `/api/v1` unchanged to `API_PROXY_TARGET`; `VITE_API_BASE_URL` defaults to `/api/v1`. Optional configuration is documented in `frontend/.env.example`. API requests remain same-origin because the backend uses host-only SameSite Strict cookies and has no cross-origin CORS configuration. No backend cookie or proxy configuration was changed. Production frontend container/Nginx static hosting is not implemented in this scaffold.
 
-Routes are `/login`, `/`, `/products`, `/receivings`, `/receivings/new`, `/receivings/:id`, `/transactions`, `/inventory`, `/notifications` and a Supervisor-only `/transactions/review` placeholder. Products are readable by both roles and creatable by Supervisor. Both roles can list/read receiving documents; only Operator can open `/receivings/new` and create expected SKU lines. Product search, pagination and receiving status filters use the existing backend contract. Successful creation refreshes relevant query caches. Detail views display the server's expected/approved/remaining quantities and status. Transactions, review, inventory and notifications remain labeled planned views; overview contains navigation/workflow guidance.
+Routes include `/login`, `/`, `/products`, `/receivings`, `/receivings/new`, `/receivings/:id`, `/receivings/:id/transactions/new`, `/transactions`, `/transactions/:id` and Supervisor-only `/transactions/review`. Products are readable by both roles and creatable by Supervisor. Both roles can list/read documents and transactions; Operator creates documents and records physical receipts. Supervisor corrects unresolved rejected input, resolves confirmed excess and approves pending transactions. Transaction/review navigation starts with document selection because history is scoped to an RCV in the API. Inventory and notifications remain labeled planned views; overview contains navigation/workflow guidance.
 
 Receiving creation supports multiple SKU lines, paginated product lookup, duplicate-SKU prevention, positive int64 quantities and duplicate ORD feedback. Expected quantities cannot be edited after creation. Quantities use BigInt internally and numeric JSON tokens on the wire, preserving the entire int64 range. Values above JavaScript's safe integer range require a modern browser with JSON source access and `JSON.rawJSON`; the tested Chrome supports both. Older engines reject unsafe values rather than silently rounding them. No new npm dependency is needed.
+
+Open a receiving document to see its paginated transaction history and record a physical receipt. Select only the SKUs received; unchecked lines are omitted. Physical excess remains submittable within positive int64 bounds and is displayed as a saved system rejection requiring review. Supervisor correction compares recorded values with proposed quantities and requires a reason; confirmed-excess resolution requires a note and keeps the transaction rejected. Approval requires confirmation and refreshes receiving/transaction/inventory caches from confirmed server results. Inventory is never incremented optimistically. Completed documents and approved transactions are closed to further receiving or editing respectively.
 
 Authentication adapts the inspected reference's typed fetch, memory-only access token, cookie credentials, shared refresh promise and one retry to the locked nested envelopes and empty logout 204. Refresh supplies role display from JWT claims without an invented identity endpoint. Tokens are not stored in localStorage/sessionStorage. Invalid/revoked sessions clear local identity/cache; temporary unavailability hides the workspace and offers retry. If server logout cannot be confirmed, the page clears local state and explicitly offers another sign-out attempt; HttpOnly cookies require server cooperation to revoke/clear.
 
@@ -184,3 +187,5 @@ npm run test:browser
 ```
 
 Without an executable override, Playwright uses its managed Chromium installation. Browser artifacts default to `/tmp/warehouse-playwright-results`; traces are disabled to avoid capturing authentication secrets. The full suite uses Vite development modules for some authentication checks. `npm run test:browser -- tests/catalogue-receiving.spec.ts` runs the three Task 3B browser workflows against development or production preview, creating uniquely named fixtures in the disposable backend. Supply the same role credentials as above. Optional `E2E_SCREENSHOT_DIR` and `E2E_CONTRACT_DIR` keep screenshots and completed business response captures outside the repository. Production frontend static hosting remains deferred.
+
+`npm run test:browser -- tests/receiving-transactions.spec.ts` runs three Task 3C browser scenarios against development or production preview: partial approval through all-SKU completion, correction/resolution of excess, maximum-int64 precision and a competing approval with exactly-once inventory evidence. These use both provisioned roles, create uniquely named isolated fixtures, and verify stock/ledger/audit through existing backend APIs. They do not require an inventory UI or notification worker.

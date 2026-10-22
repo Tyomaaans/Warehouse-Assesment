@@ -9,6 +9,7 @@ import { displayDate } from '../../lib/view';
 import { useAuth } from '../auth/use-auth';
 import { isCanonicalID, receivingApi } from './api';
 import { ReceivingStatus } from './ReceivingStatus';
+import { TransactionHistory } from '../transactions/TransactionHistory';
 
 export function ReceivingDetailPage() {
   const { id = '' } = useParams();
@@ -28,5 +29,6 @@ export function ReceivingDetailPage() {
         {document.items.map(item => <tr key={item.id}><td><span className="sku-label">{item.sku}</span></td><td>{item.name}</td><td className="quantity">{item.expected_quantity.toLocaleString()}</td><td className="quantity">{item.approved_quantity.toLocaleString()}</td><td className="quantity">{item.remaining_quantity.toLocaleString()}</td></tr>)}
       </Table> : <EmptyState title="No SKU lines returned">The server returned no expected lines for this document.</EmptyState>}
     </section>
+    <TransactionHistory key={document.id} receiving={document} />
   </>;
 }

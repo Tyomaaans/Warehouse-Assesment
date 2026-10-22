@@ -150,7 +150,7 @@ test('Operator creates multi-SKU snapshots, exact int64 quantities, duplicate OR
     { product_id: second.id, expected: 9223372036854775807n, approved: 0n, remaining: 9223372036854775807n },
   ]));
   await expect(page).toHaveURL(new RegExp(`/receivings/${savedDocument.id}$`));
-  await expect(page.getByRole('status')).toHaveText('Receiving document created.');
+  await expect(page.getByRole('status').filter({ hasText: 'Receiving document created.' })).toHaveText('Receiving document created.');
   await expect(page.getByText('Incomplete', { exact: true })).toBeVisible();
   const detailResponse = page.waitForResponse(response => response.url().endsWith(`/api/v1/receivings/${savedDocument.id}`));
   await page.reload();
@@ -186,8 +186,14 @@ test('both roles read paginated documents and exact detail; invalid IDs and miss
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(page).toHaveURL(/page=2/);
   await expect(page.getByRole('navigation', { name: 'Pagination' })).toContainText('Page 2');
+  const completedResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/receivings' && new URL(response.url()).searchParams.get('status') === 'COMPLETED');
   await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('COMPLETED');
-  await expect(page.getByText('No receiving documents on this page')).toBeVisible();
+  const completed = await completedResponse;
+  const completedData = (await completed.json()).data as { receivings: { status: string }[] };
+  await direct(completed);
+  expect(completedData.receivings.every(document => document.status === 'COMPLETED')).toBe(true);
+  if (completedData.receivings.length) await expect(page.getByRole('table').getByText('Completed', { exact: true })).toHaveCount(completedData.receivings.length);
+  else await expect(page.getByText('No receiving documents on this page')).toBeVisible();
   await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('INCOMPLETE');
   await expect(page.getByRole('table')).toBeVisible();
   expect((await direct(await context.request.get('/api/v1/receivings?page=1&limit=10&status=INCOMPLETE', { headers: { Authorization: `Bearer ${auth.access_token}` } }))).status()).toBe(200);

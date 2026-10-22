@@ -16,6 +16,7 @@ import { ApiError, type Role } from '../lib/api/types';
 import { ApiClient } from '../lib/api/client';
 import { decodeJSON, encodeJSON } from '../lib/api/json';
 import { api } from '../lib/api/client';
+import { transactionsApi } from '../features/transactions/api';
 
 const firstID = 'VQ6EAOKbQdSnFkRmVUQAAA';
 const secondID = 'ZQ6EAOKbQdSnFkRmVUQAAA';
@@ -120,6 +121,7 @@ describe('receiving documents', () => {
   });
 
   it('renders expected/approved/remaining values from detail data without deriving fake totals', async () => {
+    vi.spyOn(transactionsApi, 'list').mockResolvedValue({ transactions: [], meta: { ...meta, total_pages: 0, total_data: 0 } });
     vi.spyOn(receivingApi, 'detail').mockResolvedValue(document);
     view(<Routes><Route path="/receivings/:id" element={<ReceivingDetailPage />} /></Routes>, 'OPERATOR', `/receivings/${firstID}`);
     const table = await screen.findByRole('table');

@@ -11,7 +11,7 @@ import { useAuth } from '../auth/use-auth';
 import { receivingApi, type ReceivingFilters } from './api';
 import { ReceivingStatus } from './ReceivingStatus';
 
-export function ReceivingListPage() {
+export function ReceivingListPage({ mode = 'documents' }: { mode?: 'documents' | 'transactions' | 'review' }) {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const status = params.get('status');
@@ -22,7 +22,8 @@ export function ReceivingListPage() {
     if (nextStatus) next.set('status', nextStatus);
     setParams(next);
   }
-  return <><PageHeader eyebrow="INBOUND EXPECTATIONS" title="Receiving documents" description="Expected quantities and approved progress for every inbound delivery." action={user?.role === 'OPERATOR' ? <Link className="button button-primary" to="/receivings/new"><Plus size={16} aria-hidden="true" />New receiving document</Link> : undefined} />
+  const title = mode === 'review' ? 'Supervisor review' : mode === 'transactions' ? 'Receiving transactions' : 'Receiving documents';
+  return <><PageHeader eyebrow="INBOUND EXPECTATIONS" title={title} description={mode === 'documents' ? 'Expected quantities and approved progress for every inbound delivery.' : 'Choose a receiving document to open its transaction history and permitted actions.'} action={mode === 'documents' && user?.role === 'OPERATOR' ? <Link className="button button-primary" to="/receivings/new"><Plus size={16} aria-hidden="true" />New receiving document</Link> : undefined} />
     <section className="data-card" aria-label="Receiving documents"><div className="list-toolbar"><label className="inline-field">Status<select value={filters.status} onChange={event => change(1, event.target.value as ReceivingFilters['status'])}><option value="">All statuses</option><option value="INCOMPLETE">Incomplete</option><option value="COMPLETED">Completed</option></select></label><PageSize value={filters.limit} onChange={limit => change(1, filters.status, limit)} /></div>
       {query.isPending ? <LoadingState label="Loading receiving documents…" /> : query.isError ? <QueryError error={query.error} retry={() => { void query.refetch(); }} /> : <>
         {query.data.receivings.length ? <Table caption="Receiving documents" headings={['External ORD reference', 'Status', 'Created', 'Document']}>

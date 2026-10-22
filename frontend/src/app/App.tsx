@@ -13,6 +13,8 @@ import { ProductsPage } from '../features/products/ProductsPage';
 import { ReceivingListPage } from '../features/receiving/ReceivingListPage';
 import { ReceivingDetailPage } from '../features/receiving/ReceivingDetailPage';
 import { CreateReceivingPage } from '../features/receiving/CreateReceivingPage';
+import { TransactionEntryPage } from '../features/transactions/TransactionEntryPage';
+import { TransactionDetailPage } from '../features/transactions/TransactionDetailPage';
 
 export function App() {
   return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><Routes>
@@ -23,8 +25,11 @@ export function App() {
       <Route path="/receivings" element={<ReceivingListPage />} />
       <Route element={<ProtectedRoute roles={['OPERATOR']} />}><Route path="/receivings/new" element={<CreateReceivingPage />} /></Route>
       <Route path="/receivings/:id" element={<ReceivingDetailPage />} />
-      {areas.filter(area => !['/', '/products', '/receivings'].includes(area.path)).map(area => <Route key={area.path} path={area.path} element={<FeaturePlaceholder {...area} planned={area.planned!} />} />)}
-      <Route element={<ProtectedRoute roles={['SUPERVISOR']} />}><Route path={reviewArea.path} element={<FeaturePlaceholder {...reviewArea} />} /></Route>
+      <Route element={<ProtectedRoute roles={['OPERATOR']} />}><Route path="/receivings/:id/transactions/new" element={<TransactionEntryPage />} /></Route>
+      <Route path="/transactions" element={<ReceivingListPage mode="transactions" />} />
+      <Route path="/transactions/:id" element={<TransactionDetailPage />} />
+      {areas.filter(area => !['/', '/products', '/receivings', '/transactions'].includes(area.path)).map(area => <Route key={area.path} path={area.path} element={<FeaturePlaceholder {...area} planned={area.planned!} />} />)}
+      <Route element={<ProtectedRoute roles={['SUPERVISOR']} />}><Route path={reviewArea.path} element={<ReceivingListPage mode="review" />} /></Route>
       <Route path="*" element={<EmptyState title="This page isn’t here.">Return to the <Link className="text-link" to="/">workspace overview</Link> to find your way.</EmptyState>} />
     </Route></Route>
   </Routes></BrowserRouter></AuthProvider></QueryClientProvider>;
