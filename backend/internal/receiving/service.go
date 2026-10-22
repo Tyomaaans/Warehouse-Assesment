@@ -17,6 +17,13 @@ type ReceivingService interface {
 	CreateDocument(context.Context, CreateReceivingRequest) (*ReceivingResponse, error)
 	GetDocuments(context.Context, string, int, int) (*PaginatedReceivingResponse, error)
 	GetDocument(context.Context, string) (*ReceivingResponse, error)
+	CreateTransaction(context.Context, string, CreateTransactionRequest) (*TransactionResponse, error)
+	GetTransactions(context.Context, string, int, int) (*PaginatedTransactionResponse, error)
+	GetTransaction(context.Context, string) (*TransactionResponse, error)
+	CorrectTransaction(context.Context, string, CorrectTransactionRequest) (*TransactionResponse, error)
+	ReviewTransaction(context.Context, string, ReviewTransactionRequest) (*TransactionResponse, error)
+	ApproveTransaction(context.Context, string) (*TransactionResponse, error)
+	GetAuditLogs(context.Context, string, int, int) (*PaginatedAuditResponse, error)
 }
 
 // Implementation

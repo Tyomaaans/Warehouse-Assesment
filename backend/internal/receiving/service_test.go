@@ -12,9 +12,11 @@ import (
 )
 
 type receivingRepositoryStub struct {
-	document *domain.DocumentEntity
-	audit    domain.AuditEntity
-	err      error
+	document    *domain.DocumentEntity
+	audit       domain.AuditEntity
+	err         error
+	transaction *domain.TransactionEntity
+	tx          domain.ReceivingTx
 }
 
 func (r *receivingRepositoryStub) CreateDocument(_ context.Context, document *domain.DocumentEntity, audit domain.AuditEntity) error {
@@ -34,12 +36,19 @@ func (*receivingRepositoryStub) GetTransactions(context.Context, uuid.UUID, int,
 	return nil, 0, pkg.ErrInternal
 }
 
-func (*receivingRepositoryStub) GetTransaction(context.Context, uuid.UUID) (*domain.TransactionEntity, error) {
-	return nil, pkg.ErrInternal
+func (r *receivingRepositoryStub) GetTransaction(context.Context, uuid.UUID) (*domain.TransactionEntity, error) {
+	return r.transaction, r.err
 }
 
-func (*receivingRepositoryStub) WithDocument(context.Context, uuid.UUID, func(domain.ReceivingTx) error) error {
+func (r *receivingRepositoryStub) WithDocument(_ context.Context, _ uuid.UUID, fn func(domain.ReceivingTx) error) error {
+	if r.tx != nil {
+		return fn(r.tx)
+	}
 	return pkg.ErrInternal
+}
+
+func (*receivingRepositoryStub) GetAuditLogs(context.Context, *uuid.UUID, int, int) ([]domain.AuditRecordEntity, int64, error) {
+	return nil, 0, nil
 }
 
 func TestCreateDocumentUsesTrustedActorAndSnapshots(t *testing.T) {

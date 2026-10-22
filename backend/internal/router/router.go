@@ -9,13 +9,23 @@ import (
 	"github.com/rs/zerolog"
 
 	"warehouse/internal/auth/user"
+	"warehouse/internal/inventory"
 	"warehouse/internal/middleware"
 	"warehouse/internal/products"
 	"warehouse/internal/receiving"
 	"warehouse/pkg"
 )
 
-func NewRouter(logger zerolog.Logger, ready func(context.Context) error, trustedProxies []string, authHandler *user.UserAuthHandler, authMiddleware *middleware.AuthMiddleware, productHandler *products.ProductHandler, receivingHandler *receiving.ReceivingHandler) (*gin.Engine, error) {
+func NewRouter(
+	logger zerolog.Logger,
+	ready func(context.Context) error,
+	trustedProxies []string,
+	authHandler *user.UserAuthHandler,
+	authMiddleware *middleware.AuthMiddleware,
+	productHandler *products.ProductHandler,
+	receivingHandler *receiving.ReceivingHandler,
+	inventoryHandler *inventory.InventoryHandler,
+) (*gin.Engine, error) {
 	r := gin.New()
 	if err := r.SetTrustedProxies(trustedProxies); err != nil {
 		return nil, err
@@ -35,6 +45,15 @@ func NewRouter(logger zerolog.Logger, ready func(context.Context) error, trusted
 	protected.GET("/receivings", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), receivingHandler.GetDocuments)
 	protected.POST("/receivings", authMiddleware.RequireRole(pkg.Operator), receivingHandler.CreateDocument)
 	protected.GET("/receivings/:id", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), receivingHandler.GetDocument)
+	protected.GET("/receivings/:id/transactions", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), receivingHandler.GetTransactions)
+	protected.POST("/receivings/:id/transactions", authMiddleware.RequireRole(pkg.Operator), receivingHandler.CreateTransaction)
+	protected.GET("/transactions/:id", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), receivingHandler.GetTransaction)
+	protected.POST("/transactions/:id/approve", authMiddleware.RequireRole(pkg.Supervisor), receivingHandler.ApproveTransaction)
+	protected.PATCH("/transactions/:id/correct", authMiddleware.RequireRole(pkg.Supervisor), receivingHandler.CorrectTransaction)
+	protected.POST("/transactions/:id/review", authMiddleware.RequireRole(pkg.Supervisor), receivingHandler.ReviewTransaction)
+	protected.GET("/inventory", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), inventoryHandler.GetBalances)
+	protected.GET("/inventory/transactions", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), inventoryHandler.GetMovements)
+	protected.GET("/receiving-audit-logs", authMiddleware.RequireRole(pkg.Supervisor), receivingHandler.GetAuditLogs)
 	v1.GET("/health", func(c *gin.Context) {
 		pkg.SuccessResponse(c, http.StatusOK, "healthy", gin.H{"status": "ok"})
 	})

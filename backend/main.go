@@ -20,6 +20,7 @@ import (
 	"warehouse/internal/infrastructure/postgres"
 	"warehouse/internal/infrastructure/rabbitmq"
 	"warehouse/internal/infrastructure/redis"
+	"warehouse/internal/inventory"
 	"warehouse/internal/middleware"
 	"warehouse/internal/products"
 	"warehouse/internal/receiving"
@@ -130,8 +131,9 @@ func run(ctx context.Context, logger zerolog.Logger, command string) error {
 	authMiddleware := middleware.NewAuthMiddleware(tokenSvc)
 	productSvc := products.NewProductService(products.NewProductRepository(db), pkg.NewValidator())
 	receivingSvc := receiving.NewReceivingService(receiving.NewReceivingRepository(db), pkg.NewValidator())
+	inventorySvc := inventory.NewInventoryService(inventory.NewInventoryRepository(db))
 	r, err := router.NewRouter(logger, ready, cfg.TrustedProxies, authHandler, authMiddleware,
-		products.NewProductHandler(productSvc), receiving.NewReceivingHandler(receivingSvc))
+		products.NewProductHandler(productSvc), receiving.NewReceivingHandler(receivingSvc), inventory.NewInventoryHandler(inventorySvc))
 	if err != nil {
 		return fmt.Errorf("invalid trusted proxies")
 	}

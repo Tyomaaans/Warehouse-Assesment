@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -75,6 +76,18 @@ type AuditEntity struct {
 	CreatedAt     time.Time
 }
 
+type AuditRecordEntity struct {
+	ID                     uuid.UUID
+	ReceivingDocumentID    uuid.UUID
+	ReceivingTransactionID *uuid.UUID
+	ActorID                *uuid.UUID
+	EventType              string
+	BeforeData             json.RawMessage
+	AfterData              json.RawMessage
+	Reason                 *string
+	CreatedAt              time.Time
+}
+
 type ReceivingTx interface {
 	Document() *DocumentEntity
 	HasActiveTransaction() (bool, error)
@@ -93,4 +106,5 @@ type ReceivingRepository interface {
 	GetTransactions(context.Context, uuid.UUID, int, int) ([]TransactionEntity, int64, error)
 	GetTransaction(context.Context, uuid.UUID) (*TransactionEntity, error)
 	WithDocument(context.Context, uuid.UUID, func(ReceivingTx) error) error
+	GetAuditLogs(context.Context, *uuid.UUID, int, int) ([]AuditRecordEntity, int64, error)
 }

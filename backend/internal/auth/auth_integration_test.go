@@ -26,6 +26,7 @@ import (
 	"warehouse/internal/auth/token"
 	"warehouse/internal/auth/user"
 	"warehouse/internal/infrastructure/postgres"
+	"warehouse/internal/inventory"
 	"warehouse/internal/middleware"
 	"warehouse/internal/products"
 	"warehouse/internal/receiving"
@@ -120,7 +121,8 @@ func newAuthFixture(t *testing.T) *authFixture {
 	gin.SetMode(gin.ReleaseMode)
 	f.router, err = router.NewRouter(zerolog.Nop(), func(context.Context) error { return nil }, nil, user.NewUserHandler(userSvc, true), authMiddleware,
 		products.NewProductHandler(products.NewProductService(products.NewProductRepository(db), pkg.NewValidator())),
-		receiving.NewReceivingHandler(receiving.NewReceivingService(receiving.NewReceivingRepository(db), pkg.NewValidator())))
+		receiving.NewReceivingHandler(receiving.NewReceivingService(receiving.NewReceivingRepository(db), pkg.NewValidator())),
+		inventory.NewInventoryHandler(inventory.NewInventoryService(inventory.NewInventoryRepository(db))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +272,8 @@ func TestAuthenticationIntegration(t *testing.T) {
 		authMiddleware := middleware.NewAuthMiddleware(tokenSvc)
 		r, err := router.NewRouter(zerolog.Nop(), func(context.Context) error { return nil }, nil, user.NewUserHandler(userSvc, true), authMiddleware,
 			products.NewProductHandler(products.NewProductService(products.NewProductRepository(f.db), pkg.NewValidator())),
-			receiving.NewReceivingHandler(receiving.NewReceivingService(receiving.NewReceivingRepository(f.db), pkg.NewValidator())))
+			receiving.NewReceivingHandler(receiving.NewReceivingService(receiving.NewReceivingRepository(f.db), pkg.NewValidator())),
+			inventory.NewInventoryHandler(inventory.NewInventoryService(inventory.NewInventoryRepository(f.db))))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -460,7 +463,7 @@ func TestAuthenticationIntegration(t *testing.T) {
 		}
 	})
 	t.Run("unfinished_workflows_remain_unregistered", func(t *testing.T) {
-		for _, path := range []string{"/api/v1/inventory", "/api/v1/transactions", "/api/v1/users/me", "/api/v1/auth/register"} {
+		for _, path := range []string{"/api/v1/notifications", "/api/v1/transactions", "/api/v1/users/me", "/api/v1/auth/register"} {
 			wantError(t, f.request("GET", path, "", "", nil), 404, "not_found")
 		}
 	})

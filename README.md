@@ -1,5 +1,5 @@
-# Warehouse Receiving & Inventory Tracking System — Specification Pack
-This workspace contains locked documentation, the backend foundation, authentication/session/RBAC, product management and receiving-document creation/reads. Actual receiving transactions, review/approval, inventory workflows, notification processing and frontend implementation remain later tasks.
+# Warehouse Receiving & Inventory Tracking System
+This workspace contains the locked specifications and the core backend: authentication/session/RBAC, products, receiving documents/transactions, Supervisor correction/review/approval, inventory and audit reads. Notification delivery and frontend implementation remain later tasks.
 
 ## Documents
 - `docs/prd.md` — English PRD / business source of truth.
@@ -11,6 +11,7 @@ This workspace contains locked documentation, the backend foundation, authentica
 - `docs/task-2a-report.md` — foundation audit, reused files, implementation scope and verification evidence.
 - `docs/task-2b-report.md` — authentication/session/RBAC implementation and verification evidence.
 - `docs/task-2c-report.md` — product/receiving-document implementation, tests and Git delivery evidence.
+- `docs/task-2d-report.md` — core receiving/inventory implementation, concurrency/rollback evidence and Git delivery.
 - `docs/data-flow.mmd` — Mermaid business flow.
 - `docs/rbac.md` — explicit role/action matrix.
 - `docs/testing.md` — small critical test suite and evidence plan.
@@ -22,7 +23,7 @@ This workspace contains locked documentation, the backend foundation, authentica
 2. Reference projects are under `/home/tyomaans/Projects`: `auth-session`, `clone-mini-erp`, `web-profile/web-profile-frontend`, and `search-feature-node-js`.
 3. Prompt 1 inspected actual conventions; Task 1B resolved the differences. See `docs/conventions-audit.md`.
 4. Validate the locked `docs/openapi.yml` and maintain cross-document consistency **before** implementation.
-5. Tasks 2A–2C cover the foundation, auth, products and receiving documents. Task 2C authorizes a separate verified commit and push to `origin/main`. Stop after Task 2C; Task 2D and later workflows require further approval.
+5. Tasks 2A–2D cover the foundation and core backend. Task 2D authorizes a verified separate commit/push to `origin/main`; required outbox rows are included, with delivery/workers deferred. Stop after Task 2D; notifications and frontend require further authorization.
 6. Add actual application code, migrations, Dockerfiles/Compose, `.env.example`, and a real deployment README. Record tests, limitations, and Git commits.
 
 ## Assessment
@@ -62,7 +63,23 @@ Health/readiness and POST `/api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1
 
 Use the access token as `Authorization: Bearer <token>`. List defaults are `page=1`, `limit=10`; maxima are 10000 and 100. Responses use the locked envelopes and 22-character Base64URL UUID v4 IDs. RCV creation accepts `order_reference` and a nonempty `items` array of `product_id`/positive-int64 `expected_quantity` pairs, without duplicate products. The document, immutable expected-quantity snapshots and creation audit commit together; actor/time come from authentication/server UTC. Duplicate SKU/ORD returns 409; invalid/missing product references return 400. An ORD is a text reference with no external synchronization.
 
-No identity/registration, TRX/history, correction/review/approval, inventory or notification route is registered. Preserved partial workflow code remains inactive. These checks do not substitute for the remaining T01–T06 scenarios or the final receiving smoke test.
+Task 2D adds:
+
+| Method/path | Permission | Behavior |
+|---|---|---|
+| POST `/api/v1/receivings/{id}/transactions` | Operator | Persist actual quantities as pending or system-rejected, both with HTTP 201 |
+| GET `/api/v1/receivings/{id}/transactions` | Either role | Paginated transaction history |
+| GET `/api/v1/transactions/{id}` | Either role | Transaction detail with approval/correction/review metadata |
+| PATCH `/api/v1/transactions/{id}/correct` | Supervisor | Correct an unresolved rejection in place, with reason and immutable before/after audit |
+| POST `/api/v1/transactions/{id}/review` | Supervisor | Resolve confirmed excess with a note; retain rejection and post no inventory |
+| POST `/api/v1/transactions/{id}/approve` | Supervisor | Atomically approve, post inventory once, audit and recalculate completion |
+| GET `/api/v1/inventory` | Either role | Approved inbound balances, with SKU/name search |
+| GET `/api/v1/inventory/transactions` | Either role | Immutable source-linked movements, optionally filtered by `product_id` |
+| GET `/api/v1/receiving-audit-logs` | Supervisor | Immutable business history, optionally filtered by `receiving_id` |
+
+Transaction submission accepts nonempty `items` containing `receiving_document_item_id` and positive-int64 `actual_quantity`. Each line must belong to the RCV, without duplicates. Only one pending or unresolved rejected transaction is active at a time. Over-limit attempts remain `REJECTED_BY_SYSTEM`/`UNRESOLVED`; they do not alter stock. Corrections require a reason and the complete replacement item list, retain TRX/RCV IDs and retained-line IDs, and revalidate the cap. Approved and rejected/resolved transactions are terminal. Repeated approval returns 409.
+
+Approval locks RCV then TRX and increments balances in product-ID order. Approval metadata, unique-source ledger rows, balances, completion, audit and outbox records commit together. An RCV completes only when every SKU's approved total equals its expected quantity. Inventory balances appear on first approved posting; product creation and pending/rejected transactions write no inventory. Ledger rows expose source item/TRX/RCV IDs. Notifications are not delivered: required outbox events remain unpublished for Task 2E, and notification/identity/registration routes remain unregistered.
 
 Provision the two role accounts explicitly. Export `OPERATOR_EMAIL`, `OPERATOR_PASSWORD`, `SUPERVISOR_EMAIL` and `SUPERVISOR_PASSWORD` in your shell, then run:
 
@@ -87,7 +104,7 @@ go test ./...
 go vet ./...
 ```
 
-Tests cover the T07 foundation contracts, focused auth/session/RBAC, and Task 2C product/receiving-document validation, role restrictions, snapshot immutability, rollback and uniqueness under concurrent requests. PostgreSQL/Redis integration tests skip explicitly unless both `TEST_DATABASE_URL` (a PostgreSQL URL) and `TEST_REDIS_URL` are set. Use disposable infrastructure: the suite creates and removes unique database schemas and uses isolated user/session IDs, without flushing Redis. To run them:
+Tests cover T01–T08 core receiving scenarios, auth/session/RBAC, product/document validation, snapshots, correction/review, concurrent active transactions and approvals, shared-stock increments, and full rollback on inventory/outbox failures. PostgreSQL/Redis integration tests skip explicitly unless both `TEST_DATABASE_URL` (a PostgreSQL URL) and `TEST_REDIS_URL` are set. Use disposable infrastructure: the suite creates and removes unique database schemas and uses isolated user/session IDs, without flushing Redis. To run them:
 
 ```sh
 TEST_DATABASE_URL='postgres://user:password@127.0.0.1:5432/warehouse_auth_test?sslmode=disable' \
@@ -95,7 +112,7 @@ TEST_REDIS_URL='redis://127.0.0.1:6379/0' \
 go test -count=1 -v ./...
 ```
 
-The task reports list exact executed commands, including writable temporary caches used by the agent environment. Task 2C tests authenticate through real PostgreSQL/Redis-backed login and exercise the production router. Set `CONTRACT_EVIDENCE_PATH` to a temporary JSON path to export business-response samples for OpenAPI validation; authentication tokens are not exported. Future business handlers still require their own route and service enforcement.
+The task reports list exact executed commands, including writable temporary caches used by the agent environment. API tests authenticate through real PostgreSQL/Redis-backed login and exercise the production router. Set `CONTRACT_EVIDENCE_PATH='/tmp/warehouse-{test}.json'` to export each integration test's business responses separately for OpenAPI validation; authentication tokens are not exported. The compiled-server smoke exercises partial/full receipts, rejection, correction, resolution, inventory and RBAC. Browser/frontend verification remains later work.
 
 ## Locked implementation conventions
 Canonical 22-character Base64URL UUID v4 IDs; clone-style success/nested error envelopes and management pagination; strict binding plus validator/service checks; auth-session JWT and Redis/cookie revocation; versioned SQL migrations; typed React fetch with shared refresh and one retry. Exact contracts are in `docs/openapi.yml` and `docs/technical-spec.md`. No unresolved convention conflict remains after Task 1B.

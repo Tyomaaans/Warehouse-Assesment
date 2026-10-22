@@ -1,6 +1,7 @@
 package receiving
 
 import (
+	"encoding/json"
 	"time"
 
 	"warehouse/pkg"
@@ -92,4 +93,21 @@ type PaginatedReceivingResponse struct {
 type PaginatedTransactionResponse struct {
 	Transactions []TransactionResponse `json:"transactions"`
 	Meta         pkg.PaginationMeta    `json:"meta"`
+}
+
+type AuditRecordResponse struct {
+	ID                     string          `json:"id"`
+	ReceivingDocumentID    string          `json:"receiving_document_id"`
+	ReceivingTransactionID *string         `json:"receiving_transaction_id"`
+	ActorID                *string         `json:"actor_id"`
+	EventType              string          `json:"event_type"`
+	Reason                 *string         `json:"reason"`
+	BeforeData             json.RawMessage `json:"before_data"`
+	AfterData              json.RawMessage `json:"after_data"`
+	CreatedAt              time.Time       `json:"created_at"`
+}
+
+type PaginatedAuditResponse struct {
+	AuditLogs []AuditRecordResponse `json:"audit_logs"`
+	Meta      pkg.PaginationMeta    `json:"meta"`
 }

@@ -79,27 +79,31 @@ func (r *receivingRepository) GetDocument(ctx context.Context, id uuid.UUID) (*d
 }
 
 func (r *receivingRepository) GetTransactions(ctx context.Context, id uuid.UUID, page, limit int) ([]domain.TransactionEntity, int64, error) {
-	var parent DocumentStorage
-	if err := r.db.WithContext(ctx).First(&parent, "id=?", id).Error; err != nil {
-		return nil, 0, pkg.HandleDBError(err)
-	}
-	query := r.db.WithContext(ctx).Model(&TransactionStorage{}).Where("receiving_document_id=?", id)
+	result := make([]domain.TransactionEntity, 0)
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, pkg.HandleDBError(err)
-	}
-	var rows []TransactionStorage
-	if err := query.Order("created_at DESC,id ASC").Limit(limit).Offset((page - 1) * limit).Find(&rows).Error; err != nil {
-		return nil, 0, pkg.HandleDBError(err)
-	}
-	result := make([]domain.TransactionEntity, len(rows))
-	for i, row := range rows {
-		result[i] = ToTransactionEntity(row)
-		if err := loadTransactionItems(r.db.WithContext(ctx), &result[i]); err != nil {
-			return nil, 0, pkg.HandleDBError(err)
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var parent DocumentStorage
+		if err := tx.First(&parent, "id=?", id).Error; err != nil {
+			return err
 		}
-	}
-	return result, total, nil
+		query := tx.Model(&TransactionStorage{}).Where("receiving_document_id=?", id)
+		if err := query.Count(&total).Error; err != nil {
+			return err
+		}
+		var rows []TransactionStorage
+		if err := query.Order("created_at DESC,id ASC").Limit(limit).Offset((page - 1) * limit).Find(&rows).Error; err != nil {
+			return err
+		}
+		result = make([]domain.TransactionEntity, len(rows))
+		for i, row := range rows {
+			result[i] = ToTransactionEntity(row)
+			if err := loadTransactionItems(tx, &result[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return result, total, pkg.HandleDBError(err)
 }
 
 func (r *receivingRepository) GetTransaction(ctx context.Context, id uuid.UUID) (*domain.TransactionEntity, error) {

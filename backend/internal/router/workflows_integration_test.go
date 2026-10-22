@@ -23,6 +23,7 @@ import (
 	"warehouse/internal/auth/user"
 	"warehouse/internal/infrastructure/postgres"
 	redisinfra "warehouse/internal/infrastructure/redis"
+	"warehouse/internal/inventory"
 	"warehouse/internal/middleware"
 	"warehouse/internal/products"
 	"warehouse/internal/receiving"
@@ -106,7 +107,8 @@ func newWorkflowFixture(t *testing.T) *workflowFixture {
 	productHandler := products.NewProductHandler(products.NewProductService(products.NewProductRepository(db), pkg.NewValidator()))
 	receivingHandler := receiving.NewReceivingHandler(receiving.NewReceivingService(receiving.NewReceivingRepository(db), pkg.NewValidator()))
 	gin.SetMode(gin.ReleaseMode)
-	f.router, err = router.NewRouter(zerolog.Nop(), func(context.Context) error { return nil }, nil, authHandler, authMiddleware, productHandler, receivingHandler)
+	inventoryHandler := inventory.NewInventoryHandler(inventory.NewInventoryService(inventory.NewInventoryRepository(db)))
+	f.router, err = router.NewRouter(zerolog.Nop(), func(context.Context) error { return nil }, nil, authHandler, authMiddleware, productHandler, receivingHandler, inventoryHandler)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,6 +142,7 @@ func newWorkflowFixture(t *testing.T) *workflowFixture {
 		})
 	}
 	if path := os.Getenv("CONTRACT_EVIDENCE_PATH"); path != "" {
+		path = strings.ReplaceAll(path, "{test}", t.Name())
 		t.Cleanup(func() {
 			data, err := json.MarshalIndent(f.evidence, "", "  ")
 			if err != nil {
@@ -168,11 +171,25 @@ func (f *workflowFixture) request(method, path string, payload any, role string)
 	}
 	response := httptest.NewRecorder()
 	f.router.ServeHTTP(response, req)
-	operation := strings.Split(path, "?")[0]
-	if method == "GET" && strings.HasPrefix(operation, "/api/v1/receivings/") && !strings.Contains(strings.TrimPrefix(operation, "/api/v1/receivings/"), "/") {
-		operation = "/api/v1/receivings/{id}"
+	operation := ""
+	parts := strings.Split(strings.Split(path, "?")[0], "/")
+	for _, route := range f.router.Routes() {
+		template := strings.Split(route.Path, "/")
+		if route.Method != method || len(template) != len(parts) {
+			continue
+		}
+		matches := true
+		for i := range parts {
+			if template[i] != parts[i] && template[i] != ":id" {
+				matches = false
+			}
+		}
+		if matches {
+			operation = strings.ReplaceAll(route.Path, ":id", "{id}")
+			break
+		}
 	}
-	if operation == "/api/v1/products" || operation == "/api/v1/receivings" || operation == "/api/v1/receivings/{id}" {
+	if operation != "" && !strings.HasPrefix(operation, "/api/v1/auth/") {
 		f.mu.Lock()
 		f.evidence = append(f.evidence, responseEvidence{Method: method, Path: strings.TrimPrefix(operation, "/api/v1"), Status: response.Code, Body: append(json.RawMessage(nil), response.Body.Bytes()...)})
 		f.mu.Unlock()
@@ -446,8 +463,8 @@ func TestProductReceivingIntegration(t *testing.T) {
 			}
 		}
 	})
-	t.Run("excluded_workflows_remain_inactive", func(t *testing.T) {
-		for _, path := range []string{"/api/v1/receivings/" + document.ID + "/transactions", "/api/v1/transactions/" + pkg.EncodeID(uuid.New()) + "/approve", "/api/v1/inventory", "/api/v1/notifications"} {
+	t.Run("document_creation_does_not_post_inventory_or_deliver_notifications", func(t *testing.T) {
+		for _, path := range []string{"/api/v1/notifications", "/api/v1/users/me"} {
 			for _, method := range []string{"GET", "POST"} {
 				workflowError(t, f.request(method, path, `{}`, pkg.Supervisor), 404, "not_found")
 			}
