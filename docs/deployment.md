@@ -82,3 +82,9 @@ docker compose -p warehouse --env-file /opt/warehouse-assessment/.env --env-file
 ```
 
 The authoritative actual local/CI/VPS/public results and any pending operator work are recorded in `docs/task-3d-3e-report.md` and the final delivery handoff. Task 4 coverage is planned separately in `docs/task-4-test-plan.md`.
+
+## Recorded deployment result (2026-10-23)
+
+[Actions run39858680963](https://github.com/Tyomaaans/Warehouse-Assesment/actions/runs/39858680963) passed build and deploy for implementation `7c855aed8922c8f2d274c7954a270d878b24edbc`. The current release is `<implementation>-39858680963-1`. All seven VPS services were healthy with zero restarts/OOM, and limited loopback readiness/SPA/both-role login-refresh-logout/revocation smoke passed. Direct host-loopback TCP peer was measured as172.30.83.1; this is not assumed to establish the pending public direct-Nginx path. Private runtime config remains0600; initial bootstrap is now false, and credentials stay on the VPS only. Fresh production DB contains two role users and zero products/RCVs/ledger/outbox rows.
+
+Public frontend `/` and `/receivings` return HTTPS200 and the expected production assets; the JavaScript hash matches the verified build. Cloudflare adds dynamic challenge markup, so full HTML equality is not used as an origin-identity test. **Public acceptance remains pending by owner decision** until the operator adds the direct API location and the actual public proxy/cookie/browser path is verified. Gin trust stays empty meanwhile. Host Nginx and unrelated infrastructure were untouched. This is limited deployment smoke, not Task 4 full E2E.

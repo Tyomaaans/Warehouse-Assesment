@@ -1,6 +1,6 @@
 # Combined Task 3D/3E — Frontend completion and production delivery
 
-Date: 2026-10-23. Local mandatory gate: **passed**. Git/CI/VPS delivery: pending the authorized staged review/push at this report's initial commit; actual delivery evidence will be appended after observing execution. **Public acceptance remains pending by the owner's explicit decision. Task 4 has not been executed.**
+Date: 2026-10-23. Local mandatory gate: **passed**. Implementation committed/pushed as `7c855aed8922c8f2d274c7954a270d878b24edbc`; GitHub Actions build/deploy succeeded and all seven VPS services are healthy. Limited loopback authentication/SPA/readiness and public frontend reachability checks passed. **Public acceptance remains pending by the owner's explicit decision. Task 4 has not been executed.**
 
 ## Baseline and scope
 
@@ -26,13 +26,13 @@ Production Dockerfiles support both actual source builds and CI-precompiled runt
 
 The owner's host-Nginx instruction supersedes the older specification's project-Nginx deployment example. Removed only obsolete `deploy/nginx.conf`/Compose service. The frontend production application uses Node HTTP static serving, SPA fallback, cache/security headers and a same-origin local-test API relay that strips supplied forwarding headers. No project Nginx image, Dockerfile, service or configuration was added. Host Nginx was never changed/reloaded/restarted. Required operator-owned direct API routing is documented in `docs/deployment.md`.
 
-Read-only VPS audit verified existing Warehouse SSH key access to owner-confirmed `tyomaaans@202.10.40.123:2222`, unrelated web-profile services/ports/volumes, available target path/resources, host TLS and current vhost. Initial free disk was3.2GiB; available RAM468MiB plus swap. Runtime limits total560MiB; this is not a capacity/load-test claim. Ports18082/18083 and subnet172.30.83.0/24 were unused. The existing `/opt/warehouse-assessment` had empty releases/shared and no private runtime file. Nothing unrelated was overwritten/deleted.
+Read-only VPS audit verified existing Warehouse SSH key access to owner-confirmed `tyomaaans@202.10.40.123:2222`, unrelated web-profile services/ports/volumes, available target path/resources, host TLS and current vhost. Initial free disk was 3.2 GiB; available RAM 468 MiB plus swap. Runtime limits total 560 MiB; this is not a capacity/load-test claim. Ports 18082/18083 and subnet 172.30.83.0/24 were unused. The existing `/opt/warehouse-assessment` had empty releases/shared and no private runtime file. Nothing unrelated was overwritten/deleted.
 
 GitHub API metadata confirmed five existing secret names without retrieving values. The owner resolved the singular/plural discrepancy in favor of existing `DEPLOY_KNOWN_HOSTS`; workflow uses exactly `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_SSH_KEY`. No new/renamed secret or deployment variable. Strict known-host checking is retained. Production configuration stays outside releases/artifacts/images. After the mandatory local gate passed, created a new mode-0600 `/opt/warehouse-assessment/.env` with independently generated secrets and initial Operator/Supervisor accounts; no existing file was replaced, values were not printed/downloaded, and proxy trust remains empty. Initial account addresses are `operator@wh.tyomaaans.cloud` and `supervisor@wh.tyomaaans.cloud`; retrieve credentials through the owner’s SSH access only.
 
 ## Actual verification commands and evidence
 
-Node22.22.2/npm11.21.0; Go1.26.4. Frontend commands ran from `frontend` with `PATH=/tmp/wh-task3a-toolchain/bin:$PATH` and `npm_config_cache=/tmp/wh-npm-cache`. Go used `GOTOOLCHAIN=local`, `GOPATH=/tmp/wh-go-path`, `GOMODCACHE=/tmp/wh-go-mod`; after a temporary quota failure, `GOCACHE=/home/tyomaans/Projects/wh-assesment/.work/go-cache` and `GOTMPDIR=/home/tyomaans/Projects/wh-assesment/.work/go-tmp`. Both workspace scratch directories are ignored and excluded from delivery.
+Node 22.22.2/npm 11.21.0; Go 1.26.4. Frontend commands ran from `frontend` with `PATH=/tmp/wh-task3a-toolchain/bin:$PATH` and `npm_config_cache=/tmp/wh-npm-cache`. Go used `GOTOOLCHAIN=local`, `GOPATH=/tmp/wh-go-path`, `GOMODCACHE=/tmp/wh-go-mod`; after a temporary quota failure, `GOCACHE=/home/tyomaans/Projects/wh-assesment/.work/go-cache` and `GOTMPDIR=/home/tyomaans/Projects/wh-assesment/.work/go-tmp`. Both workspace scratch directories are ignored and excluded from delivery.
 
 | Command | Actual result |
 |---|---|
@@ -85,7 +85,7 @@ Failed/aborted runs, simulated rollback cases and prior-phase checks are not cou
 
 The owner explicitly selected **Leave public acceptance pending**. The existing host vhost lacks a dedicated `/api/v1/` ->127.0.0.1:18083 location; required operator configuration is in `docs/deployment.md`. No automatic Nginx change. `TRUSTED_PROXIES` remains empty until an actual request-ID-correlated public host-Nginx TCP peer can be verified. No broad/default gateway trust is introduced. Workflow explicitly records operator-pending public acceptance rather than claiming HTTPS acceptance from loopback health or frontend relay responses.
 
-CI/VPS execution results will be appended only after they actually run. Task4's public full E2E/browser matrix/recovery drills remain unexecuted. Single-broker/light-traffic resource budgets, at-least-once transport/lease-delay recovery, modern native JSON support for high int64, per-RCV review navigation, comprehensive accessibility/browser coverage and off-host backup/restore testing remain documented limits.
+Actual CI/VPS results are recorded below; public acceptance is explicitly separate from their successful results. Task 4's public full E2E/browser matrix/recovery drills remain unexecuted. Single-broker/light-traffic resource budgets, at-least-once transport/lease-delay recovery, modern native JSON support for high int64, per-RCV review navigation, comprehensive accessibility/browser coverage and off-host backup/restore testing remain documented limits.
 
 ## Complete Task 3D/3E file inventory
 
@@ -137,3 +137,23 @@ Total: **37 files**. Excludes secrets, installed dependencies, compiled assets/b
 ## Git delivery
 
 Implementation commit subject: `feat: complete frontend and production deployment`. Explicit file staging, complete diff/secret review and `git diff --cached --check` gate the authorized push to origin/main. Resolve the implementation hash with `git log --format=%H --grep="^feat: complete frontend and production deployment$" -1`. A documentation-only follow-up may record observed CI/VPS results without redeploying application containers. Final handoff reports actual hashes, workflow/push results and Git status. No broad add, force push, amend, reset or destructive cleanup. Stop after combined Task3D/3E.
+
+## Observed GitHub Actions and VPS delivery
+
+Implementation: **`7c855aed8922c8f2d274c7954a270d878b24edbc`**, subject `feat: complete frontend and production deployment`. `git push origin main` succeeded (`8910591..7c855ae`); the working tree was clean afterward. [GitHub Actions run 39858680963](https://github.com/Tyomaaans/Warehouse-Assesment/actions/runs/39858680963) completed **success**, including both build/verification and deploy jobs. No manual deployment bypass or workflow rerun was required. CI independently executed 46 frontend tests, the real production-stack Go/infrastructure/race gate, 10 business browser cases (25.5s) plus three authentication cases (3.3s), and validated the same 120 responses/24 payloads/563 canonical IDs across 18 operations.
+
+The verified artifact was transferred using the existing SSH secrets; both runtime images were assembled on the VPS from its precompiled inputs. Release **`7c855aed8922c8f2d274c7954a270d878b24edbc-39858680963-1`** activated under `/opt/warehouse-assessment/current`. The background deployment returned 0. The private pre-migration backup is 826 bytes (the fresh database before schema creation), retained under `backups/pre-<release>.dump`. All seven services were healthy with **zero restarts/OOM events**: API, frontend, outbox publisher, notification consumer, PostgreSQL, Redis and RabbitMQ. Frontend/API bind only127.0.0.1:18082/18083; the three infrastructure services publish no host ports. Existing web-profile services and volumes remain untouched. Post-build disk free was2.5GiB; runtime working sets are not a load/capacity certification.
+
+Executed limited VPS smoke:
+
+```sh
+ssh -F /dev/null -p 2222 -i /home/tyomaans/.ssh/github_deploy_warehouse_assesment \
+  -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  tyomaaans@202.10.40.123 python3 - < /tmp/warehouse-vps-smoke.py
+```
+
+Actual results: all seven Docker health states passed; loopback API health/readiness, frontend production assets and `/transactions/review` SPA fallback passed. Both provisioned roles logged in, returned 900-second access lifetime/canonical user IDs, set Secure/HttpOnly/Strict cookies, rotated refresh cookies, read permitted product/receiving/inventory/notification APIs, logged out with empty204 and were denied subsequent protected access with401. Raw direct-loopback Gin peer measured **172.30.83.1**, with configured proxy trust still empty. Both worker logs confirm actual broker connections. SQL counts users/products/RCVs/ledger/outbox were **2|0|0|0|0**: this limited smoke created no production business fixtures. Initial bootstrap was then disabled by changing only `BOOTSTRAP_USERS=true` to false in the new private runtime file; all credentials/settings and0600 permissions remain intact. No credential values were printed, downloaded or committed.
+
+Limited public checks: `curl` returned **HTTPS200** for `/` and `/receivings`; both have the correct application title/root/assets, and `/assets/index-NqXI3GvR.js` has SHA-256 **`c804ef4ba2c895e99782e893c0ca7afe84db6f00f204c2e754d2b9934352ab41`**, equal to the verified build. The initial whole-response equality assertion failed because Cloudflare injects per-request challenge parameters; retained raw pages confirm that difference. Corrected the temporary assertion to compare application identity/assets, then verified the actual bundle hash. No application or Cloudflare/Nginx setting was changed. This establishes limited public frontend reachability, **not public API-path/HTTPS-browser acceptance**.
+
+The owner explicitly left public acceptance pending. The workflow records that warning rather than claiming public acceptance from loopback health. Required host `/api/v1/` routing, request-ID-correlated direct Nginx peer/trust and public login/browser acceptance remain operator-gated. No host Nginx installation/configuration/restart/reload, new secrets, registry, business-rule change or Task 4 execution occurred. The three documentation files receive a separate evidence-only commit/push, excluded from deployment triggers; application source/images stay at the verified implementation commit. Final handoff supplies that documentation hash and final Git synchronization status.
