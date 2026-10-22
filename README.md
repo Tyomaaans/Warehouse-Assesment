@@ -18,7 +18,8 @@ This workspace contains the locked specifications and the core backend: authenti
 - `docs/task-3c-report.md` — transaction entry/history, Supervisor decisions and inventory correctness evidence from real browser workflows.
 - `docs/task-3d-3e-report.md` — completed frontend, production containers/CI and actual deployment evidence.
 - `docs/deployment.md` — host Nginx boundary, private configuration, release workflow and recovery.
-- `docs/task-4-test-plan.md` — future public full E2E plan; not executed in Task 3D/3E.
+- `docs/task-4-test-plan.md` — original production acceptance plan.
+- `docs/task-4-report.md` — production E2E, regression, recovery, defects and final assessment-readiness evidence.
 - `docs/data-flow.mmd` — Mermaid business flow.
 - `docs/rbac.md` — explicit role/action matrix.
 - `docs/testing.md` — small critical test suite and evidence plan.
@@ -30,7 +31,7 @@ This workspace contains the locked specifications and the core backend: authenti
 2. Reference projects are under `/home/tyomaans/Projects`: `auth-session`, `clone-mini-erp`, `web-profile/web-profile-frontend`, and `search-feature-node-js`.
 3. Prompt 1 inspected actual conventions; Task 1B resolved the differences. See `docs/conventions-audit.md`.
 4. Validate the locked `docs/openapi.yml` and maintain cross-document consistency **before** implementation.
-5. Tasks 2A–2E implemented the backend; Tasks 3A–3C implemented authentication, products, documents and receiving decisions. The owner authorized combined Task 3D/3E for the remaining frontend, production stack and deployment. Task 4 is planning only and requires a separate execution.
+5. Tasks 2A–2E implemented the backend; Tasks 3A–3C implemented authentication, products, documents and receiving decisions. Combined Task 3D/3E completed the frontend and deployment. Task 4 production acceptance and any remaining limitations are recorded in `docs/task-4-report.md`.
 6. Add actual application code, migrations, Dockerfiles/Compose, `.env.example`, and a real deployment README. Record tests, limitations, and Git commits.
 
 ## Assessment
@@ -199,6 +200,10 @@ Without an executable override, Playwright uses its managed Chromium installatio
 
 `/notifications` lists only the authenticated recipient’s delivered updates with read state/timestamps and mark-as-read. It polls once per minute while visible, with no hidden-tab polling. Logout/account changes clear session caches. The dashboard uses metadata totals for incomplete/completed documents, posted SKUs and own delivered notifications; it never calls a paginated subset a global unread or quantity total.
 
-The combined Task 3D/3E uses the audited clone-mini-erp source-artifact/SSH/VPS-build workflow, immutable release tags, locks, private backups, migrations, health gates and application rollback. The five existing deployment secrets are reused unchanged. Production serves assets without Vite or project Nginx; only the host’s existing Nginx handles public HTTPS. Setup, the exact operator-owned `/api/v1/` route and measured trusted-proxy procedure are in [deployment.md](docs/deployment.md). The target is **https://wh.tyomaaans.cloud**; actual acceptance status is in [the combined report](docs/task-3d-3e-report.md), not inferred from a successful push/startup.
+The combined Task 3D/3E uses the audited clone-mini-erp source-artifact/SSH/VPS-build workflow, immutable release tags, locks, private backups, migrations, health gates and application rollback. The five existing deployment secrets are reused unchanged. Production serves assets without Vite or project Nginx; only the host’s existing Nginx handles public HTTPS. Setup, the exact operator-owned `/api/v1/` route and measured trusted-proxy procedure are in [deployment.md](docs/deployment.md). The target is **https://wh.tyomaaans.cloud**; current acceptance evidence is in [the Task 4 report](docs/task-4-report.md), which supersedes the historical operator-pending public status in the deployment report.
 
-Run `python3 scripts/check-deployment.py`, `python3 scripts/test-deploy.py` and `python3 scripts/verify-production.py` for deployment boundaries, simulated rollback cases and actual isolated production-stack acceptance respectively. The latter requires the documented Go/Node/npm toolchain, installed frontend dependencies and Chrome. It retains private evidence/data and stops only its own task stack. These checks do not execute Task 4. The separate [Task 4 test plan](docs/task-4-test-plan.md) targets the public HTTPS deployment.
+Run `python3 scripts/check-deployment.py`, `python3 scripts/test-deploy.py` and `python3 scripts/verify-production.py` for deployment boundaries, simulated rollback cases and actual isolated production-stack acceptance respectively. The latter requires the documented Go/Node/npm toolchain, installed frontend dependencies and Chrome. It retains private evidence/data and stops only its own task stack. These local checks alone do not establish public acceptance. Production browser tests must use approved accounts and explicitly named test fixtures; do not run the existing disposable-environment notification suite unchanged against shared production data.
+
+Task 4 also records the owner-accepted non-blocking Cloudflare finding: Analytics and JavaScript Detections scripts are blocked by the current CSP. CSP and Bot Fight Mode are preserved; the bot-detection integration is not fully validated. No new business feature is part of acceptance work.
+
+Current Task 4 status: **production acceptance complete; ready for final assessment submission** within the limits in [task-4-report.md](docs/task-4-report.md). Repair `04e535b` is deployed: [workflow 39869194961, attempt 2](https://github.com/Tyomaaans/Warehouse-Assesment/actions/runs/39869194961/attempts/2) succeeded after one bounded retry with unchanged SSH configuration/secrets. Both-role public Chrome regression passes, including 390px inventory containment, auth/restoration, receiving/approval, inventory and notifications; existing data/volumes are preserved. The original timeout occurred before authentication; its exact network cause remains unknown. CF-01 remains accepted/non-blocking, and no Task 5 is started.
