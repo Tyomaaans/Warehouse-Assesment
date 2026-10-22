@@ -1,5 +1,6 @@
 import { API_BASE } from './config';
 import { ApiError, type Failure, type RefreshData, type Success } from './types';
+import { decodeJSON, encodeJSON } from './json';
 
 interface RequestOptions extends Omit<RequestInit, 'body' | 'credentials'> {
   body?: unknown;
@@ -51,6 +52,7 @@ export class ApiClient {
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const { body, public: isPublic, headers, ...rest } = options;
+    const serializedBody = body === undefined ? undefined : encodeJSON(body);
     const send = async () => {
       const finalHeaders = new Headers(headers);
       finalHeaders.set('Accept', 'application/json');
@@ -58,7 +60,7 @@ export class ApiClient {
       if (!isPublic && this.token) finalHeaders.set('Authorization', `Bearer ${this.token}`);
       try {
         return await this.fetcher(`${this.base}${path}`, { ...rest, headers: finalHeaders, credentials: 'include',
-          body: body === undefined ? undefined : JSON.stringify(body) });
+          body: serializedBody });
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') throw error;
         throw new ApiError(0, 'network', 'Unable to reach the server. Check your connection and try again.');
@@ -81,7 +83,7 @@ export class ApiClient {
     }
     if (response.status === 204) return undefined as T;
     let envelope: Success<T>;
-    try { envelope = await response.json() as Success<T>; }
+    try { envelope = decodeJSON(await response.text()) as Success<T>; }
     catch { throw new ApiError(502, 'invalid_response', 'The server returned an unexpected response.'); }
     if (envelope?.success !== true || !('data' in envelope)) throw new ApiError(502, 'invalid_response', 'The server returned an unexpected response.');
     return envelope.data;

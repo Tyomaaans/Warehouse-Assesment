@@ -12,7 +12,7 @@ export function AppShell() {
   const location = useLocation();
   const dialog = useRef<HTMLDialogElement>(null);
   const main = useRef<HTMLElement>(null);
-  const area = [reviewArea, ...areas].find(item => item.path === location.pathname);
+  const area = [reviewArea, ...areas].find(item => item.path === location.pathname) ?? (location.pathname.startsWith('/receivings/') ? areas.find(item => item.path === '/receivings') : undefined);
 
   useEffect(() => {
     dialog.current?.close();
@@ -26,7 +26,7 @@ export function AppShell() {
   const navigation = <>
     <Brand />
     <p className="nav-label">WORKSPACE</p>
-    <nav aria-label="Main navigation">{areas.map(item => <NavLink key={item.path} to={item.path} end className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}><item.icon size={18} strokeWidth={1.7} aria-hidden="true" /><span>{item.label}</span></NavLink>)}</nav>
+    <nav aria-label="Main navigation">{areas.map(item => <NavLink key={item.path} to={item.path} end={item.path !== '/receivings'} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}><item.icon size={18} strokeWidth={1.7} aria-hidden="true" /><span>{item.label}</span></NavLink>)}</nav>
     {user.role === 'SUPERVISOR' && <><p className="nav-label role-nav-label">YOUR ROLE</p><nav aria-label="Supervisor navigation"><NavLink to={reviewArea.path} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}><ShieldCheck size={18} aria-hidden="true" /><span>Supervisor review</span></NavLink></nav></>}
     <div className="sidebar-bottom"><div className="workspace-note"><span className="tiny-dot" /><span>One warehouse.<br /><strong>One clear picture.</strong></span></div><div className="account"><div className="avatar">{user.role === 'SUPERVISOR' ? 'SP' : 'OP'}</div><div><strong>{roleLabel(user.role)}</strong><span title={user.email}>{user.email ?? 'Warehouse session'}</span></div></div><Button variant="quiet" className="logout-button" onClick={() => { void auth.logout(); }} disabled={auth.signingOut}><LogOut size={17} aria-hidden="true" /> Sign out</Button></div>
   </>;

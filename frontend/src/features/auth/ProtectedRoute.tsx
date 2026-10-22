@@ -10,6 +10,6 @@ export function ProtectedRoute({ roles }: { roles?: Role[] }) {
   if (auth.status === 'restoring' || auth.signingOut) return <LoadingState label={auth.signingOut ? 'Signing out…' : 'Restoring your session…'} />;
   if (auth.status === 'unavailable') return <div className="session-gate"><ErrorState title="We couldn’t restore your session" action={<Button onClick={auth.restore}>Try again</Button>}>{auth.message ?? 'The server is temporarily unavailable. Your workspace will open once your session can be verified.'}</ErrorState></div>;
   if (!auth.user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
-  if (roles && !roles.includes(auth.user.role)) return <ErrorState title="Supervisor access required" action={<Link className="button button-secondary" to="/">Back to overview</Link>}>Your role does not have access to this workspace.</ErrorState>;
+  if (roles && !roles.includes(auth.user.role)) return <ErrorState title={`${roles.includes('SUPERVISOR') ? 'Supervisor' : 'Operator'} access required`} action={<Link className="button button-secondary" to="/">Back to overview</Link>}>Your role does not have access to this workspace.</ErrorState>;
   return <Outlet />;
 }

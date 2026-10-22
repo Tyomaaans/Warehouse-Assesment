@@ -84,7 +84,12 @@ test('Supervisor navigation, explicit placeholders, logout 204 and cookie cleari
   await login(page, 'SUPERVISOR');
   await page.getByRole('navigation', { name: 'Supervisor navigation' }).getByRole('link', { name: 'Supervisor review' }).click();
   await expect(page.getByRole('heading', { name: 'Supervisor review', exact: true })).toBeVisible();
-  for (const [path, title] of [['/products', 'Products'], ['/receivings', 'Receiving documents'], ['/transactions', 'Receiving transactions'], ['/inventory', 'Inventory'], ['/notifications', 'Notifications']]) {
+  for (const [path, title] of [['/products', 'Products'], ['/receivings', 'Receiving documents']]) {
+    await page.goto(path!);
+    await expect(page.getByRole('heading', { name: title!, exact: true })).toBeVisible();
+    await expect(page.getByText('Planned view', { exact: true })).toHaveCount(0);
+  }
+  for (const [path, title] of [['/transactions', 'Receiving transactions'], ['/inventory', 'Inventory'], ['/notifications', 'Notifications']]) {
     await page.goto(path!);
     await expect(page.getByRole('heading', { name: title!, exact: true })).toBeVisible();
     await expect(page.getByText('Planned view', { exact: true })).toBeVisible();
