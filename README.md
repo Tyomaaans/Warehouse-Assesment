@@ -13,6 +13,7 @@ This workspace contains the locked specifications and the core backend: authenti
 - `docs/task-2c-report.md` — product/receiving-document implementation, tests and Git delivery evidence.
 - `docs/task-2d-report.md` — core receiving/inventory implementation, concurrency/rollback evidence and Git delivery.
 - `docs/task-2e-report.md` — notification implementation, integration/recovery evidence and completed compiled-server verification.
+- `docs/task-3a-report.md` — frontend foundation/authentication, npm recovery, actual browser verification and delivery evidence.
 - `docs/data-flow.mmd` — Mermaid business flow.
 - `docs/rbac.md` — explicit role/action matrix.
 - `docs/testing.md` — small critical test suite and evidence plan.
@@ -133,3 +134,50 @@ The task reports list exact executed commands, including writable temporary cach
 
 ## Locked implementation conventions
 Canonical 22-character Base64URL UUID v4 IDs; clone-style success/nested error envelopes and management pagination; strict binding plus validator/service checks; auth-session JWT and Redis/cookie revocation; versioned SQL migrations; typed React fetch with shared refresh and one retry. Exact contracts are in `docs/openapi.yml` and `docs/technical-spec.md`. No unresolved convention conflict remains after Task 1B.
+
+## Frontend development
+
+The frontend is under `frontend/`, using React/TypeScript, Vite, Tailwind, React Router and TanStack Query. Task 3A implements authentication and the responsive application shell; business pages remain clearly labeled placeholders. See `docs/task-3a-report.md` for verification and the resolved npm installation failure.
+
+Use **Node 22.22.2 and npm 11.21.0**, the tested toolchain. `.nvmrc`, package-manager metadata and strict engine checks record the requirements. npm 9.2.0 crashed resolving the same dependency graph; npm 11 resolved it without changing library versions or bypassing peers. Node 22.22.1 was also below jsdom's declared minimum. With nvm, set up and run:
+
+```sh
+cd frontend
+nvm install
+nvm use
+npm install --global npm@11.21.0
+npm ci
+# Start the backend separately; its role accounts must already be provisioned.
+API_PROXY_TARGET=http://127.0.0.1:8080 npm run dev
+```
+
+Verification/build commands:
+
+```sh
+cd frontend
+npm run typecheck
+npm run build
+npm run lint
+npm test
+npm run preview
+```
+
+Vite development uses localhost port 5173 and preview uses 4173. Both proxy `/api/v1` unchanged to `API_PROXY_TARGET`; `VITE_API_BASE_URL` defaults to `/api/v1`. Optional configuration is documented in `frontend/.env.example`. API requests remain same-origin because the backend uses host-only SameSite Strict cookies and has no cross-origin CORS configuration. No backend cookie or proxy configuration was changed. Production frontend container/Nginx static hosting is not implemented in this scaffold.
+
+Routes are `/login`, `/`, `/products`, `/receivings`, `/transactions`, `/inventory`, `/notifications` and a Supervisor-only `/transactions/review` placeholder. Business areas display clearly labeled planned views without live data, metrics or notifications. The overview contains navigation/workflow guidance. No signup/reset/profile or complete business screen is added.
+
+Authentication adapts the inspected reference's typed fetch, memory-only access token, cookie credentials, shared refresh promise and one retry to the locked nested envelopes and empty logout 204. Refresh supplies role display from JWT claims without an invented identity endpoint. Tokens are not stored in localStorage/sessionStorage. Invalid/revoked sessions clear local identity/cache; temporary unavailability hides the workspace and offers retry. If server logout cannot be confirmed, the page clears local state and explicitly offers another sign-out attempt; HttpOnly cookies require server cooperation to revoke/clear.
+
+Focused unit/component tests run with `npm test`. Browser tests require a running frontend and an actual disposable backend with provisioned Operator/Supervisor accounts. Supply credentials and the isolated backend's test signing key through environment variables, outside the repository; the key is used only to construct a genuinely expired JWT for the test. For an installed Chrome binary:
+
+```sh
+cd frontend
+E2E_BASE_URL=http://127.0.0.1:5173 \
+E2E_OPERATOR_EMAIL="$OPERATOR_EMAIL" E2E_OPERATOR_PASSWORD="$OPERATOR_PASSWORD" \
+E2E_SUPERVISOR_EMAIL="$SUPERVISOR_EMAIL" E2E_SUPERVISOR_PASSWORD="$SUPERVISOR_PASSWORD" \
+E2E_JWT_SECRET="$JWT_SECRET_KEY" \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/path/to/chrome \
+npm run test:browser
+```
+
+Without an executable override, Playwright uses its managed Chromium installation. Browser artifacts default to `/tmp/warehouse-playwright-results`; traces are disabled to avoid capturing authentication secrets. The full suite uses Vite development modules to exercise the actual API client. The anonymous/login and Supervisor/logout cases also ran against the production build through Vite preview. Desktop/mobile navigation, cookie rotation, concurrent expired-token refresh, backend denial/revocation and offline recovery were verified in real Chrome. No frontend business data screens or production static hosting are included yet.
