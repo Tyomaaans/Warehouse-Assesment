@@ -121,6 +121,13 @@ func NewMeta(page, limit int, total int64) PaginationMeta {
 	return PaginationMeta{CurrentPage: page, TotalPages: (total + int64(limit) - 1) / int64(limit), PageSize: limit, TotalData: total}
 }
 
+func ValidatePagination(page, limit int) error {
+	if page < 1 || page > 10000 || limit < 1 || limit > 100 {
+		return fmt.Errorf("%w: page must be 1–10000 and limit must be 1–100", ErrInvalidInput)
+	}
+	return nil
+}
+
 func ParsePagination(c *gin.Context) (int, int, error) {
 	values := []string{c.DefaultQuery("page", "1"), c.DefaultQuery("limit", "10")}
 	result := make([]int, 2)
@@ -129,10 +136,13 @@ func ParsePagination(c *gin.Context) (int, int, error) {
 			return 0, 0, fmt.Errorf("%w: invalid pagination", ErrInvalidInput)
 		}
 		n, err := strconv.Atoi(value)
-		if err != nil || n < 1 || (i == 0 && n > 10000) || (i == 1 && n > 100) {
+		if err != nil {
 			return 0, 0, fmt.Errorf("%w: invalid pagination", ErrInvalidInput)
 		}
 		result[i] = n
+	}
+	if err := ValidatePagination(result[0], result[1]); err != nil {
+		return 0, 0, err
 	}
 	return result[0], result[1], nil
 }

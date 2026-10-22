@@ -46,6 +46,9 @@ func (s *productService) GetProducts(ctx context.Context, search string, page, l
 	if _, err := pkg.RequireActor(ctx, ""); err != nil {
 		return nil, err
 	}
+	if err := pkg.ValidatePagination(page, limit); err != nil {
+		return nil, err
+	}
 	if err := pkg.ValidateSearch(search); err != nil {
 		return nil, err
 	}

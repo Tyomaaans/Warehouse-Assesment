@@ -10,10 +10,12 @@ import (
 
 	"warehouse/internal/auth/user"
 	"warehouse/internal/middleware"
+	"warehouse/internal/products"
+	"warehouse/internal/receiving"
 	"warehouse/pkg"
 )
 
-func NewRouter(logger zerolog.Logger, ready func(context.Context) error, trustedProxies []string, authHandler *user.UserAuthHandler, authMiddleware *middleware.AuthMiddleware) (*gin.Engine, error) {
+func NewRouter(logger zerolog.Logger, ready func(context.Context) error, trustedProxies []string, authHandler *user.UserAuthHandler, authMiddleware *middleware.AuthMiddleware, productHandler *products.ProductHandler, receivingHandler *receiving.ReceivingHandler) (*gin.Engine, error) {
 	r := gin.New()
 	if err := r.SetTrustedProxies(trustedProxies); err != nil {
 		return nil, err
@@ -27,6 +29,12 @@ func NewRouter(logger zerolog.Logger, ready func(context.Context) error, trusted
 	auth.POST("/login", authHandler.LoginUser)
 	auth.POST("/refresh", authHandler.RefreshTokens)
 	auth.POST("/logout", authMiddleware.Authenticate(), authHandler.LogoutUser)
+	protected := v1.Group("", authMiddleware.Authenticate())
+	protected.GET("/products", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), productHandler.GetProducts)
+	protected.POST("/products", authMiddleware.RequireRole(pkg.Supervisor), productHandler.CreateProduct)
+	protected.GET("/receivings", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), receivingHandler.GetDocuments)
+	protected.POST("/receivings", authMiddleware.RequireRole(pkg.Operator), receivingHandler.CreateDocument)
+	protected.GET("/receivings/:id", authMiddleware.RequireRole(pkg.Operator, pkg.Supervisor), receivingHandler.GetDocument)
 	v1.GET("/health", func(c *gin.Context) {
 		pkg.SuccessResponse(c, http.StatusOK, "healthy", gin.H{"status": "ok"})
 	})

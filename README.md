@@ -1,5 +1,5 @@
 # Warehouse Receiving & Inventory Tracking System — Specification Pack
-This workspace contains locked documentation, the backend foundation, Task 2B authentication/session/RBAC implementation, and preserved partial business modules. The API exposes health/readiness and the three contracted authentication endpoints. Receiving workflows, notification processing and frontend implementation remain separate tasks requiring approval.
+This workspace contains locked documentation, the backend foundation, authentication/session/RBAC, product management and receiving-document creation/reads. Actual receiving transactions, review/approval, inventory workflows, notification processing and frontend implementation remain later tasks.
 
 ## Documents
 - `docs/prd.md` — English PRD / business source of truth.
@@ -10,6 +10,7 @@ This workspace contains locked documentation, the backend foundation, Task 2B au
 - `docs/task-1b-report.md` — full change inventory, documentation validation and commit/implementation status.
 - `docs/task-2a-report.md` — foundation audit, reused files, implementation scope and verification evidence.
 - `docs/task-2b-report.md` — authentication/session/RBAC implementation and verification evidence.
+- `docs/task-2c-report.md` — product/receiving-document implementation, tests and Git delivery evidence.
 - `docs/data-flow.mmd` — Mermaid business flow.
 - `docs/rbac.md` — explicit role/action matrix.
 - `docs/testing.md` — small critical test suite and evidence plan.
@@ -21,7 +22,7 @@ This workspace contains locked documentation, the backend foundation, Task 2B au
 2. Reference projects are under `/home/tyomaans/Projects`: `auth-session`, `clone-mini-erp`, `web-profile/web-profile-frontend`, and `search-feature-node-js`.
 3. Prompt 1 inspected actual conventions; Task 1B resolved the differences. See `docs/conventions-audit.md`.
 4. Validate the locked `docs/openapi.yml` and maintain cross-document consistency **before** implementation.
-5. Tasks 2A and 2B cover the foundation and authentication/session/RBAC. Stop after Task 2B for review; the next business feature and any commit/push require explicit approval. Full Prompts 2 and 3 remain later implementation phases.
+5. Tasks 2A–2C cover the foundation, auth, products and receiving documents. Task 2C authorizes a separate verified commit and push to `origin/main`. Stop after Task 2C; Task 2D and later workflows require further approval.
 6. Add actual application code, migrations, Dockerfiles/Compose, `.env.example`, and a real deployment README. Record tests, limitations, and Git commits.
 
 ## Assessment
@@ -49,7 +50,19 @@ Stopping preserves named volumes. PostgreSQL, Redis, RabbitMQ and its management
 
 `/api/v1/health` returns `{"success":true,"message":"healthy","data":{"status":"ok"}}`. `/api/v1/ready` checks PostgreSQL, migration checksums and Redis, returning 503 with the locked nested error envelope when unavailable. RabbitMQ connects/retries independently and reports status through structured logs; no notification worker or topology is created in Task 2A. The API image runs as UID 10001 and drains HTTP requests on SIGTERM before closing infrastructure.
 
-The registered routes are GET `/api/v1/health`, GET `/api/v1/ready`, and POST `/api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/logout`. No identity, registration or business route is exposed. Existing product and receiving code is preserved. These checks do not substitute for T01–T06 or the final receiving smoke test.
+Health/readiness and POST `/api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/logout` remain registered. Task 2C also exposes:
+
+| Method/path | Permission | Behavior |
+|---|---|---|
+| POST `/api/v1/products` | Supervisor | Create a unique SKU/product; no inventory writes |
+| GET `/api/v1/products` | Either role | Paginated products; literal, case-insensitive SKU/name `search` |
+| POST `/api/v1/receivings` | Operator | Create an `INCOMPLETE` RCV with a unique ORD reference and expected SKU quantities |
+| GET `/api/v1/receivings` | Either role | Paginated summaries, optional `INCOMPLETE`/`COMPLETED` status filter |
+| GET `/api/v1/receivings/{id}` | Either role | Expected, approved and remaining quantities per SKU |
+
+Use the access token as `Authorization: Bearer <token>`. List defaults are `page=1`, `limit=10`; maxima are 10000 and 100. Responses use the locked envelopes and 22-character Base64URL UUID v4 IDs. RCV creation accepts `order_reference` and a nonempty `items` array of `product_id`/positive-int64 `expected_quantity` pairs, without duplicate products. The document, immutable expected-quantity snapshots and creation audit commit together; actor/time come from authentication/server UTC. Duplicate SKU/ORD returns 409; invalid/missing product references return 400. An ORD is a text reference with no external synchronization.
+
+No identity/registration, TRX/history, correction/review/approval, inventory or notification route is registered. Preserved partial workflow code remains inactive. These checks do not substitute for the remaining T01–T06 scenarios or the final receiving smoke test.
 
 Provision the two role accounts explicitly. Export `OPERATOR_EMAIL`, `OPERATOR_PASSWORD`, `SUPERVISOR_EMAIL` and `SUPERVISOR_PASSWORD` in your shell, then run:
 
@@ -74,15 +87,15 @@ go test ./...
 go vet ./...
 ```
 
-Tests cover the T07 foundation request/error/UUID contracts and focused authentication/session/RBAC cases. PostgreSQL/Redis integration tests skip explicitly unless both `TEST_DATABASE_URL` (a PostgreSQL URL) and `TEST_REDIS_URL` are set. Use disposable infrastructure: the suite creates and removes a unique database schema and uses isolated user/session IDs, without flushing Redis. To run them:
+Tests cover the T07 foundation contracts, focused auth/session/RBAC, and Task 2C product/receiving-document validation, role restrictions, snapshot immutability, rollback and uniqueness under concurrent requests. PostgreSQL/Redis integration tests skip explicitly unless both `TEST_DATABASE_URL` (a PostgreSQL URL) and `TEST_REDIS_URL` are set. Use disposable infrastructure: the suite creates and removes unique database schemas and uses isolated user/session IDs, without flushing Redis. To run them:
 
 ```sh
 TEST_DATABASE_URL='postgres://user:password@127.0.0.1:5432/warehouse_auth_test?sslmode=disable' \
 TEST_REDIS_URL='redis://127.0.0.1:6379/0' \
-go test -count=1 -v ./internal/auth/...
+go test -count=1 -v ./...
 ```
 
-The task reports list exact executed commands, including writable temporary caches used by the agent environment. RBAC integration tests use test-only guard routes; future business handlers still require their own route and service enforcement.
+The task reports list exact executed commands, including writable temporary caches used by the agent environment. Task 2C tests authenticate through real PostgreSQL/Redis-backed login and exercise the production router. Set `CONTRACT_EVIDENCE_PATH` to a temporary JSON path to export business-response samples for OpenAPI validation; authentication tokens are not exported. Future business handlers still require their own route and service enforcement.
 
 ## Locked implementation conventions
 Canonical 22-character Base64URL UUID v4 IDs; clone-style success/nested error envelopes and management pagination; strict binding plus validator/service checks; auth-session JWT and Redis/cookie revocation; versioned SQL migrations; typed React fetch with shared refresh and one retry. Exact contracts are in `docs/openapi.yml` and `docs/technical-spec.md`. No unresolved convention conflict remains after Task 1B.

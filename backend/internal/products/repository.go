@@ -3,7 +3,6 @@ package products
 import (
 	"context"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"warehouse/internal/products/domain"
@@ -17,10 +16,7 @@ func NewProductRepository(db *gorm.DB) domain.ProductRepository { return &produc
 func (r *productRepository) CreateProduct(ctx context.Context, e *domain.ProductEntity) error {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		storage := ProductStorage{ID: e.ID, SKU: e.SKU, Name: e.Name, CreatedAt: e.CreatedAt}
-		if err := tx.Create(&storage).Error; err != nil {
-			return err
-		}
-		return tx.Exec("INSERT INTO inventory_balances(id,product_id,quantity,updated_at) VALUES (?,?,0,?)", uuid.New(), e.ID, e.CreatedAt).Error
+		return tx.Create(&storage).Error
 	})
 	return pkg.HandleDBError(err)
 }

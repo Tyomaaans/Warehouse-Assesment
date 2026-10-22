@@ -27,6 +27,8 @@ import (
 	"warehouse/internal/auth/user"
 	"warehouse/internal/infrastructure/postgres"
 	"warehouse/internal/middleware"
+	"warehouse/internal/products"
+	"warehouse/internal/receiving"
 	"warehouse/internal/router"
 	"warehouse/migrations"
 	"warehouse/pkg"
@@ -116,7 +118,9 @@ func newAuthFixture(t *testing.T) *authFixture {
 	userSvc := user.NewUserService(repo, tokenSvc, pkg.NewValidator())
 	authMiddleware := middleware.NewAuthMiddleware(tokenSvc)
 	gin.SetMode(gin.ReleaseMode)
-	f.router, err = router.NewRouter(zerolog.Nop(), func(context.Context) error { return nil }, nil, user.NewUserHandler(userSvc, true), authMiddleware)
+	f.router, err = router.NewRouter(zerolog.Nop(), func(context.Context) error { return nil }, nil, user.NewUserHandler(userSvc, true), authMiddleware,
+		products.NewProductHandler(products.NewProductService(products.NewProductRepository(db), pkg.NewValidator())),
+		receiving.NewReceivingHandler(receiving.NewReceivingService(receiving.NewReceivingRepository(db), pkg.NewValidator())))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +268,9 @@ func TestAuthenticationIntegration(t *testing.T) {
 		tokenSvc := token.NewJWTService("task2b-integration-signing-secret-32-bytes", 168*time.Hour, time.Hour, closedRedis, session.NewSessionService(closedRedis), repo)
 		userSvc := user.NewUserService(repo, tokenSvc, pkg.NewValidator())
 		authMiddleware := middleware.NewAuthMiddleware(tokenSvc)
-		r, err := router.NewRouter(zerolog.Nop(), func(context.Context) error { return nil }, nil, user.NewUserHandler(userSvc, true), authMiddleware)
+		r, err := router.NewRouter(zerolog.Nop(), func(context.Context) error { return nil }, nil, user.NewUserHandler(userSvc, true), authMiddleware,
+			products.NewProductHandler(products.NewProductService(products.NewProductRepository(f.db), pkg.NewValidator())),
+			receiving.NewReceivingHandler(receiving.NewReceivingService(receiving.NewReceivingRepository(f.db), pkg.NewValidator())))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -453,8 +459,8 @@ func TestAuthenticationIntegration(t *testing.T) {
 			}
 		}
 	})
-	t.Run("only_auth_and_health_routes_registered", func(t *testing.T) {
-		for _, path := range []string{"/api/v1/products", "/api/v1/receivings", "/api/v1/users/me", "/api/v1/auth/register"} {
+	t.Run("unfinished_workflows_remain_unregistered", func(t *testing.T) {
+		for _, path := range []string{"/api/v1/inventory", "/api/v1/transactions", "/api/v1/users/me", "/api/v1/auth/register"} {
 			wantError(t, f.request("GET", path, "", "", nil), 404, "not_found")
 		}
 	})
