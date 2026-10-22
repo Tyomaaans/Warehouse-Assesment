@@ -13,10 +13,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 
+	"warehouse/internal/auth/session"
+	"warehouse/internal/auth/token"
+	"warehouse/internal/auth/user"
 	"warehouse/internal/config"
 	"warehouse/internal/infrastructure/postgres"
 	"warehouse/internal/infrastructure/rabbitmq"
 	"warehouse/internal/infrastructure/redis"
+	"warehouse/internal/middleware"
 	"warehouse/internal/router"
 	"warehouse/migrations"
 	"warehouse/pkg"
@@ -44,8 +48,8 @@ func main() {
 }
 
 func run(ctx context.Context, logger zerolog.Logger, command string) error {
-	if command != "serve" && command != "migrate" {
-		return fmt.Errorf("command must be serve, migrate or healthcheck")
+	if command != "serve" && command != "migrate" && command != "provision-users" {
+		return fmt.Errorf("command must be serve, migrate, provision-users or healthcheck")
 	}
 	cfg, err := config.NewConfig()
 	if err != nil {
@@ -77,6 +81,17 @@ func run(ctx context.Context, logger zerolog.Logger, command string) error {
 	if err := migrations.Check(startup, db); err != nil {
 		return fmt.Errorf("schema is not current; run migrations before serving")
 	}
+	if command == "provision-users" {
+		created, err := user.ProvisionUsers(startup, db, pkg.NewValidator(), []user.ProvisionAccount{
+			{Email: os.Getenv("OPERATOR_EMAIL"), Password: os.Getenv("OPERATOR_PASSWORD"), Role: pkg.Operator},
+			{Email: os.Getenv("SUPERVISOR_EMAIL"), Password: os.Getenv("SUPERVISOR_PASSWORD"), Role: pkg.Supervisor},
+		})
+		if err != nil {
+			return err
+		}
+		logger.Info().Str("event", "users_provisioned").Int("created", created).Msg("role accounts provisioned; existing accounts preserved")
+		return nil
+	}
 	redisClient, err := redis.NewRedisClient(startup, cfg.RedisURL, logger)
 	if err != nil {
 		return err
@@ -105,7 +120,13 @@ func run(ctx context.Context, logger zerolog.Logger, command string) error {
 		return nil
 	}
 	gin.SetMode(gin.ReleaseMode)
-	r, err := router.NewRouter(logger, ready, cfg.TrustedProxies)
+	userRepo := user.NewUserRepository(db)
+	sessionSvc := session.NewSessionService(redisClient)
+	tokenSvc := token.NewJWTService(cfg.JWTSecretKey, cfg.DefaultRefreshExpiry, cfg.ShortRefreshExpiry, redisClient, sessionSvc, userRepo)
+	userSvc := user.NewUserService(userRepo, tokenSvc, pkg.NewValidator())
+	authHandler := user.NewUserHandler(userSvc, cfg.Environment == "production")
+	authMiddleware := middleware.NewAuthMiddleware(tokenSvc)
+	r, err := router.NewRouter(logger, ready, cfg.TrustedProxies, authHandler, authMiddleware)
 	if err != nil {
 		return fmt.Errorf("invalid trusted proxies")
 	}
@@ -120,7 +141,7 @@ func run(ctx context.Context, logger zerolog.Logger, command string) error {
 	}
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- server.ListenAndServe() }()
-	logger.Info().Str("event", "application_started").Str("environment", cfg.Environment).Msg("foundation server started")
+	logger.Info().Str("event", "application_started").Str("environment", cfg.Environment).Msg("HTTP server started")
 	select {
 	case <-ctx.Done():
 	case err := <-serverErrors:
